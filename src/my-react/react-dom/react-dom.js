@@ -27,6 +27,9 @@ import {
   msToExpirationTime
 } from './ReactFiberExpirationTime'
 
+let nextUnitOfWork = null
+let nextRoot = null
+
 let noTimeout = -1 // 这个没啥b用 就是单纯告诉你不延时
 
 var firstScheduledRoot = null;
@@ -131,6 +134,8 @@ function computeExpirationForFiber(currentTime, fiber) {
   }
   return expirationTime
 }
+
+function shouldYieldToRenderer() {}
 /* ---------计算时间相关 */
 
 
@@ -231,7 +236,7 @@ function createUpdateQueue(state) {
 function appendUpdateToQueue(queue, update) {
   // 如果队列是空的话就让队列的first和last都指向一个
   // 如果队列不为空的话 就让最后一位指向当前这个update
-  if (queue.lastUpdate === null) {
+  if (!queue.lastUpdate) {
     queue.firstUpdate = queue.lastUpdate = update;
   } else {
     queue.lastUpdate.next = update;
@@ -273,34 +278,324 @@ function enqueueUpdate(current, update) {
   } else {
     // 由于在之后会把alternate和current交换指针
     // 所以在首次setState时 queue1有可能是null
-    queue1 = current.updateQueue // 得到当前fiber的updateQueue
-    queue2 = alternate.updateQueue // 得到上一次当前fiber的updateQueue
-    if (queue1 === null) {
-      if (queue2 === null) {
-        queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState);
-        queue2 = alternate.updateQueue = createUpdateQueue(alternate.memoizedState);
-      } else {
-        queue1 = fiber.updateQueue = cloneUpdateQueue(queue2);
-      }
-    } else {
-      if (queue2 === null) {
-        queue2 = alternate.updateQueue = cloneUpdateQueue(queue1);
-      }
-    }
+    // queue1 = current.updateQueue // 得到当前fiber的updateQueue
+    // queue2 = alternate.updateQueue // 得到上一次当前fiber的updateQueue
+    // if (queue1 === null) {
+    //   if (queue2 === null) {
+    //     queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState);
+    //     queue2 = alternate.updateQueue = createUpdateQueue(alternate.memoizedState);
+    //   } else {
+    //     queue1 = fiber.updateQueue = cloneUpdateQueue(queue2);
+    //   }
+    // } else {
+    //   if (queue2 === null) {
+    //     queue2 = alternate.updateQueue = cloneUpdateQueue(queue1);
+    //   }
+    // }
   }
 
-  if (!queue2 || queue1 === queue2) {
+  if (queue2 === null || queue1 === queue2) {
     appendUpdateToQueue(queue1, update)
+  } else {
+
   }
 }
 /* ---------更新任务队列相关 */
 
 
 /* ---------真正开始调度相关 */
-function scheduleWork() {
+function scheduleWorkToRoot(fiber, expirationTime) {
+  let root = null
+  let alternate = fiber.alternate
+  let parentNode = fiber.return
+  // 检测如果当前这个fiber节点的优先级要是小于新的优先级的话
+  // 就要更新这个节点的优先级 第一次渲染时候传进来的fiber是RootFiber 它的初始优先级是0
+  // 要在这里赋值成最高优先级
+  // 如果是setState的情况 这个组件可能已经存在一个优先级了 比如上次异步时候中断的时候
+  // 也就是在浏览器非空闲时间又主动触发了一次该组件的更新 此时这个fiber就有可能有个expirationTime
+  if (fiber.expirationTime < expirationTime) fiber.expirationTime = expirationTime
+  // 如果当前这个节点的tag类型就已经是HostRoot了 说明它自己就是个FiberRoot 直接返回它的实例就好
+  if (fiber.tag === HostRoot) return fiber.stateNode
+  while (parentNode !== null) {
+    // 这里就是要更新当前fiber已经它所有父节点包括爷爷 太爷爷节点等等的childExpirationTime
+    // 这个childExpriationTime在之后更新时候会用来判断是否可以直接跳过更新 用作优化的
+    // 然后alternate上面也要保持同步
+    alternate = parentNode.alternate
+    if (parentNode.childExpirationTime < expirationTime) parentNode.childExpirationTime = expirationTime
+    if (alternate && alternate.childExpirationTime < expirationTime) alternate.childExpirationTime = expirationTime
+    // 如果parentNode的tag类型就是HostRoot的话说明当前节点的父节点就是FiberRoot 直接返回实例就成
+    if (parentNode.tag === HostRoot) return parentNode.stateNode
+    parentNode = parentNode.return
+  }
+  // 如果都退出循环走到这步了还没找到root说明可能出bug了
+  return null
+}
+
+function markPendingPriorityLevel(root, expirationTime) {
+  // 这个表示root上优先级最高的任务
+  let earliestPendingTime = root.earliestPendingTime
+  // 这个表示root上优先级最低的任务
+  let latestPendingTime = root.latestPendingTime
+  if (earliestPendingTime === NoWork) {
+    // 第一次渲染肯定是走到这步 最高和最低这俩在初始化的时候都是NoWork状态
+    root.earliestPendingTime = root.latestPendingTime = expirationTime
+  } else {
+    // root的最低优先级如果还大于当前这个expirationTime的话就说明当前这个expriationTime才是优先级最低的
+    if (latestPendingTime > expirationTime) root.latestPendingTime = expirationTime
+    // root的最高优先级如果还小于当前这个expriationTime的话就说明当前这个expirationTime才时优先级最高的
+    if (earliestPendingTime < expirationTime) root.earliestPendingTime = expirationTime
+  }
+  // 这个函数是用来给root上添加有限级时间的 这里面添加的时间才是最后更新时候真正会用到的时间
+  // findNextExpirationTimeToWorkOn(expirationTime, root)
+  let nextExpirationTimeToWorkOn = expirationTime
+  root.nextExpirationTimeToWorkOn = nextExpirationTimeToWorkOn
+  root.expirationTime = expirationTime
+}
+
+function performSyncWork(root) {
+  // 同步更新的情况下只干了一件事就是调用performWork
+  // 第一个参数是表示优先级是同步的最高优先级
+  // 第二个参数禁止yield也就是不能暂停 从头到尾一把梭
+  // nextFlushedRoot是一个全局变量 表示接下来要更新哪个root节点
+  // nextFlushedExpirationTime也是个全局变量 表示接下来要更新的root的优先级时间
+  // 正常来讲不应该写在这 但是先这么着吧
+  nextFlushedRoot = root
+  nextFlushedExpirationTime = Sync
+  performWork(Sync, false)
+}
+
+function performWork(expirationTime, isYield) {
+  // react源码中这里先是找了一下有最高优先级的root
+  // 调用了一个叫做findHighestPriorityRoot的方法
+  // 不过有多个root也就是应用不止一个挂载点的情况比较少 所以暂时先不做 以后再弄
+  if (!isYield) {
+    // 进入这里说明是优先级高 不允许暂停
+    // 第三个参数表示不能暂停
+    performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, false)
+  } else {
+
+  }
+}
+
+function scheduleCallbackWithExpirationTime(root, expirationTime) {}
+
+function performWorkOnRoot(root, expirationTime, isYield) {
+  isRendering = true // 上来要先告诉react目前在更新(创建)fiber阶段
+  let finishedWork = root.finishedWork || null // 这个就是最终生成的fiber树 初始是null
+  if (finishedWork) {
+    // 如果有有finishedWork说明已经生成好了fiber树
+    // 或者是在异步的状态下 上一帧生成好了fiber树但是没时间提交了 于是放到这一帧
+    completeRoot(root, finishedWork, expirationTime)
+  } else {
+    renderRoot(root, isYield)
+    if (!!root.finishedWork) {
+      if ( !isYield || (isYield && shouldYieldToRenderer()) ) {
+        // 在renderRoot中会给root挂上最终生成的这个finishedWork 也就是fiber树
+        // 如果isYield是false说明优先级高 是同步的 所以就直接肛
+
+        // 如果不是同步是异步的也就是说允许暂停的情况的话
+        // 就通过shouldYieldToRenderer这个方法判断是否还有剩余时间来渲染
+        // 有的话再渲染 没有的话就等下一帧再说
+        completeRoot(root, root.finishedWork, expirationTime)
+      }
+    }
+  }
+  isRendering = false
+}
+
+function renderRoot(root, isYield) {
+  // 一旦开始执行renderRoot了就进入到更新或创建fiber的流程了
+  // 这个流程也是working的过程 所以全局变量isWorking要置为true
+  isWorking = true
+
+  // nextExpirationTimeToWorkOn就是在findNextExpirationTimeToWorkOn函数中被赋值的
+  // 我这里暂时没写那个函数 暂时先让它是Sync
+  // nextExpirationTimeToWorkOn是root里有最高优先级的fiber的expirationTime
+  let expirationTime = root.nextExpirationTimeToWorkOn
+  if (nextUnitOfWork === null || expirationTime !== nextRenderExpirationTime) {
+    // nextUnitOfWork是空说明还没有要工作的fiber
+    // expirationTime不等于nextRenderExpirationTime 说明之前的异步任务中断的空隙时 有个优先级更高的任务进来了
+    // 这两种情况都要先创建一个新的workInProgress 之后在更新等等操作都是在workInProgress上完成的
+
+    // resetStack函数的作用是将之前已经更新了的父节点们的状态回滚到初始状态
+    // 因为走到这里说明可能是有个新的优先级任务进来了
+    // 这个任务的状态可能会和上一次更新的状态冲突 所以要先回滚
+    // resetStack()
+    nextRoot = root
+    nextRenderExpirationTime = expirationTime
+    // 创建第一个要工作的单元
+    // 第二个参数是要传入的props 初始是null
+    nextUnitOfWork = createWorkInProgress(root.current, null)
+    root.pendingCommitExpirationTime = NoWork
+  }
+
+  // 这个workLoop就是要不停(或有停止)地递归生成fiber树
+  workLoop(isYield)
+  root.finishedWork = root.current.alternate
+  root.pendingCommitExpirationTime = expirationTime
+}
+
+function createWorkInProgress(current, pendingProps) {
+  // 首次渲染时候只会给FiberRoot创建RootFiber 也就是这个current 所以不会有alternate
+  // alternate一般是用来连接上一次状态的fiber的
+  // 每次渲染或更新都会从FiberRoot开始
+
+  // 初次渲染时这里可以理解成 把旧的最初生成的那个RootFiber当成旧的节点生成一个新的RootFiber节点
+  let workInProgress = current.alternate
+  if (!workInProgress) {
+    workInProgress = createFiber(current.tag, pendingProps, current.key, current.mode)
+    // workInProgress.elementType = current.elementType;
+    // workInProgress.type = current.type;
+    workInProgress.stateNode = current.stateNode
+    // 这里把旧的fiber的alternate指向新的fiber
+    // 然后把新的fiber的alternate指向旧的fiber
+    workInProgress.alternate = current
+    current.alternate = workInProgress
+  } else {
+    // 如果已经有了alternate的话就复用这个alternate并初始化
+    workInProgress.pendingProps = pendingProps
+    workInProgress.effectTag = NoEffect
+    workInProgress.nextEffect = null
+    workInProgress.firstEffect = null
+    workInProgress.lastEffect = null
+  }
+  // 然后要把alternate和current进行同步
+  workInProgress.childExpirationTime = current.childExpirationTime
+  workInProgress.expirationTime = current.expirationTime
+  workInProgress.child = current.child
+  workInProgress.memoizedProps = current.memoizedProps
+  workInProgress.memoizedState = current.memoizedState
+  workInProgress.updateQueue = current.updateQueue
+  // workInProgress.firstContextDependency = current.firstContextDependency
+  workInProgress.sibling = current.sibling
+  workInProgress.index = current.index
+  // workInProgress.ref = current.ref
+  return workInProgress
+}
+
+function workLoop(isYield) {
+  console.log(nextUnitOfWork)
+  // 这里要把每一个workInProgress作为参数
+  // 然后在performUnitOfWork中生成下一个workInProgress
+  // 直到没有workInProgress或者时间不够用了才退出
+  if (!isYield) {
+    // 如果不能暂停的话就一路solo下去
+    while (!!nextUnitOfWork) {
+      nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+    }
+  } else {
+    // 如果isYield是true说明可能是用的异步渲染
+    // 那每次都要判断是否还有剩余时间
+    while (!!nextUnitOfWork && !shouldYieldToRenderer()) {
+      nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+    }
+  }
+}
+
+function performUnitOfWork(workInProgress) {
+  let next = beginWork(workInProgress)
+  workInProgress.memoizedProps = workInProgress.pendingProps
+
+  if (next === null) {
+    // next = completeUnitOfWork
+  }
+  return next
+}
+
+function beginWork(workInProgress) {
+  let next = null
+  let tag = workInProgress.tag
+  if (tag === HostRoot) {
+    next = updateHostRoot(workInProgress)
+  } else if (tag === FunctionComponent) {
+
+  } else if (tag === ClassComponent) {
+
+  } else if (tag === HostComponent) {
+
+  } else if (tag === HostText) {
+
+  }
+  // 当前这个workInProgress马上就要更新完了 所以可以把它的expirationTime置为NoWork了
+  workInProgress.expirationTime = NoWork
+  return next
+}
+
+
+function completeRoot() {
 
 }
+
+function requestWork(root, expirationTime) {
+  // 如果isRendering是true说明目前正在更新fiber树
+  // 这种情况不需要再执行requestWork 因为异步调度的关系
+  // 当放在requestAnimationFrame中的下一帧的任务开始时会自动调度
+  if (isRendering) return null
+  // 如果是批量更新但是调用了禁止批量更新的方法那就直接更新
+  if (isBatchingUpdates && isUnbatchingUpdates) performWorkOnRoot(root, Sync, false)
+  // 如果是批量更新比如说同一个事件中触发了好多setState的情况下就直接return 之后的react的事件回调会触发更新渲染
+  if (isBatchingUpdates && !isUnbatchingUpdates) return null
+  // 如果时间是Sync说明他是个最高优先级的同步任务或者是初次渲染
+  if (expirationTime === Sync) return performSyncWork(root)
+  // 如果时间不为Sync说明可能是个异步任务或者批量任务
+  if (expirationTime !== Sync) return scheduleCallbackWithExpirationTime(root, expirationTime)
+}
+
+function scheduleWork(fiber, expirationTime) {
+  // 每次开始调度都是从root开始的 不管是第一次渲染还是setState
+  let root = scheduleWorkToRoot(fiber, expirationTime)
+  // 没找到root说明出毛病了
+  if (!root) return null
+  // 接下来在源码中判断了一下是否之前有个被中断的任务
+  // 如果有就重置一下之前的状态 这种情况发生的几率比较小 回头再写
+  // 这里头给root挂上了expirationTime和nextExpirationTimeToWorkOn
+  markPendingPriorityLevel(root, expirationTime)
+  if (!isWorking) {
+    // 
+    requestWork(root, root.expirationTime)
+  }
+}
 /* ---------更新任务队列相关 */
+
+
+/* ---------根据类型更新fiber相关 */
+function updateHostRoot(workInProgress) {
+  let current = workInProgress.alternate
+  let renderExpirationTime = nextRenderExpirationTime
+  let updateQueue = workInProgress.updateQueue
+
+  processUpdateQueue(workInProgress, null)
+
+}
+
+function processUpdateQueue(workInProgress, instance) {
+  // 要保证workInProgress和alternate上的queue不指向同一个对象 否则修改了这个另外一个也改了
+  let queue = ensureWorkInProgressQueueIsAClone(workInProgress)
+  
+  // 对于初次渲染的情况下这个firstUpdate的payload是ReactDOM.render的第一个参数
+  let update = queue.firstUpdate
+}
+
+function ensureWorkInProgressQueueIsAClone(workInProgress) {
+  let current = workInProgress.alternate
+  let queue = workInProgress.updateQueue
+  if (!!current && queue === workInProgress.updateQueue) {
+    queue = workInProgress.updateQueue = cloneUpdateQueue(queue)
+  }
+  return queue
+}
+
+function cloneUpdateQueue(currentQueue) {
+  return {
+    baseState: currentQueue.baseState,
+    firstUpdate: currentQueue.firstUpdate,
+    lastUpdate: currentQueue.lastUpdate,
+    firstEffect: null,
+    lastEffect: null
+  }
+}
+
+/* ---------根据类型更新fiber相关 */
 
 
 
