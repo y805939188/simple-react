@@ -26,6 +26,9 @@ import {
   Sync,
   msToExpirationTime
 } from './ReactFiberExpirationTime'
+import {
+  UpdateState // setState和ReactDOM.render的时候都是这个类型
+} from './ReactUpdateQueue'
 
 let nextUnitOfWork = null
 let nextRoot = null
@@ -60,11 +63,6 @@ let expirationContext = NoWork
 let isWorking = false
 let isCommitting = false
 let nextRenderExpirationTime = NoWork
-
-export const UpdateState = 0
-export const ReplaceState = 1
-// export const ForceUpdate = 2
-// export const CaptureUpdate = 3
 
 /* ---------计算时间相关 */
 function requestCurrentTime() {
@@ -332,6 +330,8 @@ function scheduleWorkToRoot(fiber, expirationTime) {
 }
 
 function markPendingPriorityLevel(root, expirationTime) {
+  // 每次一轮更新完成之后earliestPendingTime和latestPendingTime还有latestPendingTime
+  // 会被重置为NoWork
   // 这个表示root上优先级最高的任务
   let earliestPendingTime = root.earliestPendingTime
   // 这个表示root上优先级最低的任务
@@ -422,6 +422,13 @@ function renderRoot(root, isYield) {
     // 这个任务的状态可能会和上一次更新的状态冲突 所以要先回滚
     // resetStack()
     nextRoot = root
+
+    // nextRenderExpirationTime 表示当前正在进行渲染(生成fiber树)的优先级时间
+    // 如果expirationTime !== nextRenderExpirationTime
+    // 说明之前异步任务中断了 然后当主线程在浏览器手中时 用户手贱又点了一下按钮触发了setState
+    // 而这时假设触发了一个同步的setState的话 之后也会进入到这个renderRoot中
+    // 由于在scheduleWork中会执行那什么markPendingxxx的那个方法 所以有可能会改变root.nextExpirationTimeToWorkOn这个值
+    // 然后就会又进到这里
     nextRenderExpirationTime = expirationTime
     // 创建第一个要工作的单元
     // 第二个参数是要传入的props 初始是null
@@ -432,6 +439,7 @@ function renderRoot(root, isYield) {
   // 这个workLoop就是要不停(或有停止)地递归生成fiber树
   workLoop(isYield)
   root.finishedWork = root.current.alternate
+  // pendingCommitExpirationTime在后面的commit过程中会用到
   root.pendingCommitExpirationTime = expirationTime
 }
 
@@ -453,6 +461,9 @@ function createWorkInProgress(current, pendingProps) {
     current.alternate = workInProgress
   } else {
     // 如果已经有了alternate的话就复用这个alternate并初始化
+
+    // createWorkInProgress在每次触发更新的时候都会执行到
+    // 但是在异步渲染的时候 每一帧不会再执行这个
     workInProgress.pendingProps = pendingProps
     workInProgress.effectTag = NoEffect
     workInProgress.nextEffect = null
@@ -465,6 +476,8 @@ function createWorkInProgress(current, pendingProps) {
   workInProgress.child = current.child
   workInProgress.memoizedProps = current.memoizedProps
   workInProgress.memoizedState = current.memoizedState
+
+  // eorkInProgress和current的updateQueue是共享的
   workInProgress.updateQueue = current.updateQueue
   // workInProgress.firstContextDependency = current.firstContextDependency
   workInProgress.sibling = current.sibling
@@ -481,6 +494,8 @@ function workLoop(isYield) {
   if (!isYield) {
     // 如果不能暂停的话就一路solo下去
     while (!!nextUnitOfWork) {
+      // 每个节点或者说每个react元素都是一个unit
+      // 不管是真实dom节点还是class类或是函数节点
       nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
     }
   } else {
@@ -493,11 +508,18 @@ function workLoop(isYield) {
 }
 
 function performUnitOfWork(workInProgress) {
+  // beginWork就是开始工作 开始工作就是创建出子fiber节点
   let next = beginWork(workInProgress)
   workInProgress.memoizedProps = workInProgress.pendingProps
 
   if (next === null) {
+    // 子fiber节点是null了
+    // 说明一侧的fiber树创建完成
+    // 然后要在completeUnitOfWork函数中将这一侧的update都挂到root上
     // next = completeUnitOfWork
+    // 然后在completeUnitOfWork中找到兄弟节点作为next进行兄弟节点上的fiber的创建
+    // 如果都到这里了 这next还是返回null 就说明这个root下的节点们都已经完成了fiber
+    // 就可以进行下一步的commit了
   }
   return next
 }
@@ -505,6 +527,25 @@ function performUnitOfWork(workInProgress) {
 function beginWork(workInProgress) {
   let next = null
   let tag = workInProgress.tag
+
+  let oldProps = workInProgress.alternate.memoizedProps
+  let newProps = workInProgress.pendingProps
+
+  // 每个current也就是每个fiber都有自己的expirationTime
+  // 这个expirationTime是当执行setState的时候在通过实例找root的那个函数中
+  // 会把新计算出来的expirationTime放在那个类的fiber上
+  // 然后在最后任务执行完了就会把那个fiber的expirationTime重置为NoWork
+  // 所以这里的updateExpirationTime得到的很可能是0 如果这个fiber上没有更新的话那就会是0
+  // 因为在createWorkInProgress的时候会将current.expirationTime赋值给workInProgress.expirationTime
+  // 而renderExpirationTime则是root.nextExpirationTimeToWorkOn给赋值的全局变量 是当前任务的更新时间
+  // 所以如果某个fiber上的updateExpirationTime是0就会小于renderExpirationTime也就会执行下面那个跳过更新的逻辑
+  if (oldProps === newProps && workInProgress.expirationTime < nextRenderExpirationTime) {
+    // 这个函数用来跳过本fiber的更新的方法
+    // 如果当前workInProgress没有子节点就返回个null 如果有子节点就返回一个子节点的克隆
+    return bailoutOnAlreadyFinishedWork(workInProgress)
+  }
+
+
   if (tag === HostRoot) {
     next = updateHostRoot(workInProgress)
   } else if (tag === FunctionComponent) {
@@ -519,6 +560,51 @@ function beginWork(workInProgress) {
   // 当前这个workInProgress马上就要更新完了 所以可以把它的expirationTime置为NoWork了
   workInProgress.expirationTime = NoWork
   return next
+}
+
+function bailoutOnAlreadyFinishedWork(workInProgress) {
+  if (workInProgress.childExpirationTime < renderExpirationTime) {
+    // childExpirationTime表示该fiber以及它的子节点们上优先级最大的一个更新
+    // 所以进入这里就是说这个fiber包括它的子节点上没有任何一个fiber的更新的优先级要大于或等于这个renderExpirationTime
+    // 就可以直接把这个fiber以及它的子节点们都跳过
+    // 比如说:
+    // <div id="ding1">
+    //   <Dingge></Dingge>
+    //   <Dingye></Dingye>
+    // </div>
+    // 假设在Dingye这个组件上执行了一个setState产生了一个更新
+    // 那么这个更新计算出来的新的expirationTime会被挂到root上并会被作为全局变量renderExpirationTime
+    // 然后renderRoot的时候会从root的fiber一直往下遍历
+    // 当遍历到Dingge这个组件的时候 由于该组件上没有产生更新 所以该组件上的childExpirationTime也是0
+    // 那么就可以直接跳过这个Dingge组件的更新
+    // 跳过返回null之后会到performUnitOfWork中 判断出next是null了 就会执行completeUnitOfWork
+    // 然后会找到这个Dingge的兄弟节点也就是Dingye Dingye身上有childExpirationTime 所以就不会跳过Dingye这个组件
+    return null
+  } else {
+    let currentChild = workInProgress.child
+    if (workInProgress.child === null) return null
+    // 在createWorkInProgress中会判断currentChild是否有alternate
+    // 有就说明这个fiber之前就setState过 没有就说明是第一次更新
+    // 另外如果这个currentChild正好有更新的话 那么在scheduleWork
+    // 那个函数中第一步执行的找root的方法中 就会给这个fiber赋上expirationTime
+    // 之后在这里的createWorkInProgress中会给新返回的workInProgress也赋值上那个上面那句话里的expirationTime
+    // 这样当下一次再执行beginWork的时候就有可能不跳过了
+    let newChildFiber = createWorkInProgress(currentChild, currentChild.pendingProps)
+    workInProgress.child = newChildFiber
+    newChildFiber.return = workInProgress
+    let currentChildSibling = currentChild.sibling
+    while (!!currentChildSibling) {
+      // 如果这个child有兄弟节点的话保证它兄弟节点也是克隆的
+      // 把它的所有兄弟节点都要创建克隆的workInProgress
+      let newChildFiberSibling = createWorkInProgress(currentChildSibling, currentChildSibling.pendingProps)
+      newChildFiber.sibling = newChildFiberSibling
+      newChildFiberSibling.return = workInProgress
+      newChildFiber = newChildFiber.sibling
+      currentChildSibling = currentChildSibling.sibling
+    }
+    // 最后返回第一个子节点
+    return workInProgress.child
+  }
 }
 
 
@@ -543,6 +629,7 @@ function requestWork(root, expirationTime) {
 
 function scheduleWork(fiber, expirationTime) {
   // 每次开始调度都是从root开始的 不管是第一次渲染还是setState
+  // scheduleWorkToRoot中会把当前这个fiber上的expirationTime置为优先级最大的
   let root = scheduleWorkToRoot(fiber, expirationTime)
   // 没找到root说明出毛病了
   if (!root) return null
@@ -560,20 +647,119 @@ function scheduleWork(fiber, expirationTime) {
 
 /* ---------根据类型更新fiber相关 */
 function updateHostRoot(workInProgress) {
-  let current = workInProgress.alternate
-  let renderExpirationTime = nextRenderExpirationTime
-  let updateQueue = workInProgress.updateQueue
+  // let current = workInProgress.alternate
+  // let renderExpirationTime = nextRenderExpirationTime
+  // let updateQueue = workInProgress.updateQueue
 
+  // 对于Root来讲 它的state就是ReactDOM.render传进来的第一个参数
+  // 当然第一次肯定是没有的 因为这里获取的prevChildren 初次渲染的时候没有上一个节点
+  let prevState = workInProgress.memoizedState
+  let prevChildren = prevState !== null ? prevState.element : null
   processUpdateQueue(workInProgress, null)
-
+  // 这个memoizedState是在上面那个provessUpdateQueue中赋值的
+  // 就是从update上把payload拿出来 对于Root节点 它的payload是 {element}
+  // 所以这里获取到的nextChildren就是这个element
+  let nextChildren = workInProgress.memoizedState.element
+  if (prevChildren === nextChildren) {
+    // 如果上次的element和这次element一样 那么就跳出这个Root的更新
+    // 一般来讲都会跳出的 因为很少有场景是直接改变ReactDOM.render的第一个参数的
+    return bailoutOnAlreadyFinishedWork(workInProgress)
+  }
+  // 该去调和Root的子节点了
+  return reconcileChildren(workInProgress, nextChildren)
 }
 
 function processUpdateQueue(workInProgress, instance) {
+  // react在更新的时候最受的规则是
+  // 越靠后点击的更新 计算出来的expirationTime就越小
+  // 而每次更新合并update的时候则是优先合并expirationTime大的
+  // 比如说点按钮更新
+  // 第一次点击的时候计算出来的时间是 17xxx99
+  // 然后这个是个异步任务 当中断把主线程交给浏览器的时候又点击了一下按钮触发了新更新
+  // 那这个新更新重新计算出来的时间可能是 17xxx88
+  // 这就意味着第一次点击时候的优先级要高于第二次的 所以会优先把17xxx99的状态合并
+  // 下次再合并 17xxx88的状态 这样最后得到的结果也是第二次点击时候产生的更新结果
+
   // 要保证workInProgress和alternate上的queue不指向同一个对象 否则修改了这个另外一个也改了
   let queue = ensureWorkInProgressQueueIsAClone(workInProgress)
   
   // 对于初次渲染的情况下这个firstUpdate的payload是ReactDOM.render的第一个参数
   let update = queue.firstUpdate
+  // 这个newBaseState用来记录的是新的状态
+  let newBaseState = queue.baseState
+  // 而resultState记录的是当前这个updateQueue中所在的state
+  // 这个resultState在getStateFromUpdate中是作为prevState的
+  // 表示每次新产生的结果
+  let resultState = newBaseState
+
+  let newFirstUpdate = null
+  let newExpirationTime = 0
+  while (!!update) {
+    // 这里得到的是每个update上的更新时间
+    let updateExpirationTime = update.expirationTime
+    if (updateExpirationTime < nextRenderExpirationTime) {
+      // 进入这里说明这个update的优先级较小
+      // 比如执行了一个setState后又马上执行了一个flushSync(() => this.setState())
+      // 像这种情况下 全局变量nextRenderExpirationTime是Sync 肯定比前面那个大
+      // 但是updateQueue中的update链表是从第一个setState的update指向第二的
+      // 所以就会走到这里
+      if (newFirstUpdate === null) {
+        newFirstUpdate = update
+        // 这里让这个newBaseState等于目前最新的值
+        newBaseState = resultState
+      }
+      if (newExpirationTime < updateExpirationTime) {
+        newExpirationTime = updateExpirationTime
+      }
+    } else {
+      // 初次渲染时候返回的是{element} 之后更新时候才返回state
+      resultState = getStateFromUpdate(workInProgress, queue, update, instance)
+    }
+    update = update.next
+  }
+
+  if (newFirstUpdate === null) {
+    // 进入这里说明该节点上的更新任务的优先级都比较高
+    // 也说明所有任务都进入到getStateFromUpdate中被更新为新的状态了
+    queue.lastUpdate = null
+    newBaseState = resultState
+  }
+  // 不能直接让baseState等于resultState
+  // 因为有可能会有优先级低的任务没有计算呢
+  queue.baseState = newBaseState
+  // 这里让firstUpdate是newFirstUpdate
+  // 如果全部任务优先级都高都计算完了 那么这个firstUpdate就是null
+  // 如果有优先级低的任务 那么这个firstUpdate就是第一个优先级低的任务
+  queue.firstUpdate = newFirstUpdate
+  // 同时还要更新当前fiber节点的expirationTime
+  // 用来下一次更新
+  workInProgress.expirationTime = newExpirationTime
+  workInProgress.memoizedState = resultState
+}
+
+function getStateFromUpdate(workInProgress, queue, update, instance) {
+  if (update.tag === UpdateState) {
+    // 这个payload有可能是执行setState时候传进来的新的状态
+    // 也有可能是初次渲染的时候传进来的那个element
+    let payload = update.payload
+    let partialState = null // partialState是部分state的意思
+    let prevState = queue.baseState
+    let nextProps = workInProgress.pendingProps
+    if (typeof payload === 'function') {
+      // setState时候可以传个函数
+      // 传函数的话一定得有个返回值
+      partialState = payload.call(instance, prevState, nextProps)
+    }
+    // 如果payload不是函数的话说明要么传的是个对象 要么是初次渲染时候的{element}
+    if (payload) {
+      return Object.assign({}, prevState, partialState)
+    } else {
+      return prevState
+    }
+  }
+  // else if (update.tag === forceState) {}
+  // else if (update.tag === ReplaceState) {}
+  // else if (update.tag === CaptureUpdate) {}
 }
 
 function ensureWorkInProgressQueueIsAClone(workInProgress) {
@@ -594,6 +780,48 @@ function cloneUpdateQueue(currentQueue) {
     lastEffect: null
   }
 }
+
+function reconcileChildren(workInProgress, newChild) {
+  let current = workInProgress.alternate
+  if (!!current) {
+    workInProgress.child = reconcileChildFibers(workInProgress, newChild)
+  } else {
+    // 进入这里说明没有current 一般不会发生在初次渲染
+  }
+  return workInProgress.child
+}
+
+function reconcileChildFibers(workInProgress, newChild) {
+  let current = workInProgress.alternate
+  let returnFiber = workInProgress
+  let currentFirstChild = current.child
+
+  let isObject = newChild instanceof Object
+  if (newChild instanceof Object) {
+    // 说明newChild是个对象 可能是react元素
+    if (newChild.$$typeof === Symbol.for('react.element')) {
+      // $$typeof:Symbol(react.xxx) 是react元素的标志
+      return reconcileSingleElement(returnFiber, currentFirstChild, newChild)
+    }
+  }
+  if (newChild instanceof Array) {
+    // 说明newChild是个数组 数组可能是好多同级的react元素
+  }
+  if (typeof newChild === 'string' || typeof newChild === 'number') {
+    // 说明newChild是个文本类型的
+  }
+  return deleteRemainingChildren(returnFiber, currentFirstChild)
+}
+
+function reconcileSingleElement(returnFiber, child, element) {
+  let expirationTime = nextRenderExpirationTime
+  let key = element.key
+  while (child !== null) {
+    
+  }
+}
+
+function deleteRemainingChildren() {}
 
 /* ---------根据类型更新fiber相关 */
 

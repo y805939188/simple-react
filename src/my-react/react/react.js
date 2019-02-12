@@ -1,5 +1,5 @@
 
-const REACT_ELEMENT_TYPE = Symbol('react.element')
+const REACT_ELEMENT_TYPE = Symbol.for('react.element')
 
 function ReactElement(type, key, props) {
   console.log(type, key, props)
