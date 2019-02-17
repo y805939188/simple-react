@@ -525,7 +525,7 @@ function createWorkInProgress(current, pendingProps) {
 }
 
 function workLoop(isYield) {
-  console.log(nextUnitOfWork)
+  // console.log(nextUnitOfWork)
   // 这里要把每一个workInProgress作为参数
   // 然后在performUnitOfWork中生成下一个workInProgress
   // 直到没有workInProgress或者时间不够用了才退出
@@ -534,19 +534,20 @@ function workLoop(isYield) {
     while (!!nextUnitOfWork) {
       // 每个节点或者说每个react元素都是一个unit
       // 不管是真实dom节点还是class类或是函数节点
-      nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+      nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
     }
   } else {
     // 如果isYield是true说明可能是用的异步渲染
     // 那每次都要判断是否还有剩余时间
     while (!!nextUnitOfWork && !shouldYieldToRenderer()) {
-      nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+      nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
     }
   }
 }
 
 function performUnitOfWork(workInProgress) {
   // beginWork就是开始工作 开始工作就是创建出子fiber节点
+  debugger
   let next = beginWork(workInProgress)
   workInProgress.memoizedProps = workInProgress.pendingProps
 
@@ -559,6 +560,8 @@ function performUnitOfWork(workInProgress) {
     // 如果都到这里了 这next还是返回null 就说明这个root下的节点们都已经完成了fiber
     // 就可以进行下一步的commit了
   }
+  // console.log(next)
+  // return null
   return next
 }
 
@@ -566,37 +569,39 @@ function beginWork(workInProgress) {
   let next = null
   let tag = workInProgress.tag
 
-  let oldProps = workInProgress.alternate.memoizedProps
-  let newProps = workInProgress.pendingProps
-
-  // 每个current也就是每个fiber都有自己的expirationTime
-  // 这个expirationTime是当执行setState的时候在通过实例找root的那个函数中
-  // 会把新计算出来的expirationTime放在那个类的fiber上
-  // 然后在最后任务执行完了就会把那个fiber的expirationTime重置为NoWork
-  // 所以这里的updateExpirationTime得到的很可能是0 如果这个fiber上没有更新的话那就会是0
-  // 因为在createWorkInProgress的时候会将current.expirationTime赋值给workInProgress.expirationTime
-  // 而renderExpirationTime则是root.nextExpirationTimeToWorkOn给赋值的全局变量 是当前任务的更新时间
-  // 所以如果某个fiber上的updateExpirationTime是0就会小于renderExpirationTime也就会执行下面那个跳过更新的逻辑
-  if (oldProps === newProps && workInProgress.expirationTime < nextRenderExpirationTime) {
-    // 这个函数用来跳过本fiber的更新的方法
-    // 如果当前workInProgress没有子节点就返回个null 如果有子节点就返回一个子节点的克隆
-    return bailoutOnAlreadyFinishedWork(workInProgress)
+  if (workInProgress.alternate !== null) {
+    let oldProps = workInProgress.alternate.memoizedProps
+    let newProps = workInProgress.pendingProps
+    // 每个current也就是每个fiber都有自己的expirationTime
+    // 这个expirationTime是当执行setState的时候在通过实例找root的那个函数中
+    // 会把新计算出来的expirationTime放在那个类的fiber上
+    // 然后在最后任务执行完了就会把那个fiber的expirationTime重置为NoWork
+    // 所以这里的updateExpirationTime得到的很可能是0 如果这个fiber上没有更新的话那就会是0
+    // 因为在createWorkInProgress的时候会将current.expirationTime赋值给workInProgress.expirationTime
+    // 而renderExpirationTime则是root.nextExpirationTimeToWorkOn给赋值的全局变量 是当前任务的更新时间
+    // 所以如果某个fiber上的updateExpirationTime是0就会小于renderExpirationTime也就会执行下面那个跳过更新的逻辑
+    if (oldProps === newProps && workInProgress.expirationTime < nextRenderExpirationTime) {
+      // 这个函数用来跳过本fiber的更新的方法
+      // 如果当前workInProgress没有子节点就返回个null 如果有子节点就返回一个子节点的克隆
+      return bailoutOnAlreadyFinishedWork(workInProgress)
+    }
   }
 
-
   if (tag === HostRoot) {
+    // debugger
     next = updateHostRoot(workInProgress)
   } else if (tag === FunctionComponent) {
 
   } else if (tag === ClassComponent) {
-
+    next = updateClassComponent(workInProgress)
   } else if (tag === HostComponent) {
-
+    next = updateHostComponent(workInProgress)
   } else if (tag === HostText) {
-
+    next = updateHostText(workInProgress)
   }
   // 当前这个workInProgress马上就要更新完了 所以可以把它的expirationTime置为NoWork了
   workInProgress.expirationTime = NoWork
+  // console.log(next)
   return next
 }
 
@@ -644,7 +649,6 @@ function bailoutOnAlreadyFinishedWork(workInProgress) {
     return workInProgress.child
   }
 }
-
 
 function completeRoot() {
 
@@ -696,6 +700,7 @@ function updateHostRoot(workInProgress) {
   let prevState = workInProgress.memoizedState
   let prevChildren = prevState !== null ? prevState.element : null
   processUpdateQueue(workInProgress, null)
+  // debugger
   // 这个memoizedState是在上面那个provessUpdateQueue中赋值的
   // 就是从update上把payload拿出来 对于Root节点 它的payload是 {element}
   // 所以这里获取到的nextChildren就是这个element
@@ -709,6 +714,33 @@ function updateHostRoot(workInProgress) {
   return reconcileChildren(workInProgress, nextChildren)
 }
 // 更新FiberRoot节点
+
+// 更新ClassComponent节点
+function updateClassComponent(workInProgress) {}
+// 更新ClassComponent节点
+
+// 更新原生dom节点
+function updateHostComponent(workInProgress) {
+  // let tag = workInProgress.type // 获取元素的名称 比如一个 'div'
+  let nextProps = workInProgress.pendingProps // 获取属性 就是ReactElement方法的第二个参数
+  let nextChildren = nextProps.children
+  // let prevProps = null
+  // let current = workInProgress.alternate
+  // if (!!current) prevProps = current.memoizedProps
+  return reconcileChildren(workInProgress, nextChildren)
+}
+// 更新原生dom节点
+
+// 更新文本节点
+function updateHostText(workInProgress) {
+  // 更新文本节点的话返回null就可以
+  // 这样就会回退到beginWork中
+  // 然后就会执行completeWork 相当于更新完了一侧的子树
+  // 之后completeWork会更新每个父节点上的effect链表
+  // 之后往上遍历找到最近的父元素的兄弟元素继续更新fiber
+  return null
+}
+// 更新文本节点
 
 // 更新state
 function processUpdateQueue(workInProgress, instance) {
@@ -791,6 +823,8 @@ function getStateFromUpdate(workInProgress, queue, update, instance) {
       // setState时候可以传个函数
       // 传函数的话一定得有个返回值
       partialState = payload.call(instance, prevState, nextProps)
+    } else {
+      partialState = payload
     }
     // 如果payload不是函数的话说明要么传的是个对象 要么是初次渲染时候的{element}
     if (payload) {
@@ -824,27 +858,31 @@ function cloneUpdateQueue(currentQueue) {
 }
 // 更新state
 
+// 调和子节点
 function reconcileChildren(workInProgress, newChild) {
-  let current = workInProgress.alternate
-  if (!!current) {
+  // debugger
+  // let current = workInProgress.alternate
+  // if (!!current) {
     workInProgress.child = reconcileChildFibers(workInProgress, newChild)
-  } else {
+  // } else {
     // 进入这里说明没有current 一般不会发生在初次渲染
-  }
+  // }
   return workInProgress.child
 }
 
 function reconcileChildFibers(workInProgress, newChild) {
+  // 在初次渲染阶段 除了RootFiber的workInProgress是有alternate的
+  // 剩下它下面的任何子节点在初次渲染时候都没有alternate
+  // 因为只有通过createWorkInProgress创建的workInProgress才会有alternate
+  // 直接通过 new Fiber是没有的
   let current = workInProgress.alternate
-  let returnFiber = workInProgress
-  let currentFirstChild = current.child
+  let currentFirstChild = current ? current.child : null
 
-  let isObject = newChild instanceof Object
   if (newChild instanceof Object) {
     // 说明newChild是个对象 可能是react元素
     if (newChild.$$typeof === Symbol.for('react.element')) {
       // $$typeof:Symbol(react.xxx) 是react元素的标志
-      return reconcileSingleElement(returnFiber, currentFirstChild, newChild)
+      return reconcileSingleElement(workInProgress, currentFirstChild, newChild)
     }
   }
   if (newChild instanceof Array) {
@@ -852,19 +890,138 @@ function reconcileChildFibers(workInProgress, newChild) {
   }
   if (typeof newChild === 'string' || typeof newChild === 'number') {
     // 说明newChild是个文本类型的
+    return reconcileSingleTextNode(workInProgress, currentFirstChild, String(newChild))
   }
-  return deleteRemainingChildren(returnFiber, currentFirstChild)
+  return deleteRemainingChildren(workInProgress, currentFirstChild)
 }
 
-function reconcileSingleElement(returnFiber, child, element) {
+function reconcileSingleElement(returnFiber, currentFirstChild, element) {
   let expirationTime = nextRenderExpirationTime
-  let key = element.key
-  while (child !== null) {
-    
+  let createdFiber = null
+  while (currentFirstChild !== null) {
+    // 这里要对key做优化
+    // 优化的主要方法就是一直遍历子节点
+    // 尝试着找出一个key和上次一样的节点 然后干掉其他的节点
+    // workInProgress是本次带有新的状态的fiber
+    // 这里要通过workInProgress.alternate.child
+    // 也就是在reconcileChildFibers等函数中传进来的这个currentFirstChild.key
+    // 获取当前这个旧的fiber的第一个子节点的key
+    // 然后用这个key来和新的子节点也就是传进来的这个element的key作比较
+    if (currentFirstChild.key === element.key) {
+      // 能进入single逻辑中说明肯定当前fiber是只有一个子元素的
+      if (currentFirstChild.elementType === element.type) {
+        // 进入这里说明当前这个子节点的key和类型都一样
+        // 可以复用一下
+        // react源码中还执行了一次deleteRemainingChildren
+        // 先把其他的兄弟节点都干掉
+        // 这是因为本次虽然只有一个子节点 但是上一次的更新或渲染中可能会有兄弟节点
+        deleteRemainingChildren(returnFiber, currentFirstChild.sibling)
+        // 之后再复用
+        let existingFiber = useFiber(currentFirstChild, element.props)
+        existingFiber.return = returnFiber
+        return existingFiber
+      } else {
+        // 进入这里说明当前子节点的key一样但是类型不一样
+        // 也要干掉当前子节点以及它的全部兄弟节点
+        deleteRemainingChildren(returnFiber, currentFirstChild)
+        break
+      }
+    } else {
+      // 进入这里说明子节点的key不想当 那么就直接干掉这个子节点
+      deleteChild(returnFiber, currentFirstChild)
+    }
+    currentFirstChild = currentFirstChild.sibling
   }
+  if (element.type !== Symbol.for('react.fragment')) {
+    createdFiber = createFiberFromElement(element, returnFiber.mode, expirationTime)
+  } else {
+    // 这里暂时先不处理fragment的情况
+  }
+  return createdFiber
 }
 
-function deleteRemainingChildren() {}
+function createFiberFromElement(element, mode, expirationTime) {
+  return createFiberFromTypeAndProps(element.type, element.key, element.props, mode, expirationTime)
+}
+
+function createFiberFromTypeAndProps(type, key, pendingProps, mode, expirationTime) {
+  let flag = null
+  if (type === 'function') {
+    // 进入这里说明是函数类型的组件或是class类
+  } else if (typeof type === 'string') {
+    // 进入这里说明可能是个原生节点比如 'div'
+    flag = HostComponent
+  } else {
+    // 进入这里就要分别判断各种react自己内部提供的组件类型了
+    // 比如concurrent fragment之类的
+  }
+
+  let fiber = createFiber(flag, pendingProps, key, mode)
+  fiber.elementType = type
+  fiber.type = type
+  fiber.expirationTime = expirationTime
+  return fiber
+}
+
+function reconcileSingleTextNode(returnFiber, currentFirstChild, text) {
+  let expirationTime = nextRenderExpirationTime
+  if (!!currentFirstChild && currentFirstChild.tag === HostText) {
+    // 有currentFirstChild并且tag是HostText的话
+    // 说明当前这个fiber已经有了子节点并且这个子节点就是文本类型
+    // 那么就可以复用这个子节点fiber
+    deleteRemainingChildren(returnFiber, currentFirstChild)
+    let existingFiber = useFiber(currentFirstChild, text, expirationTime)
+    existingFiber.return = returnFiber
+    return existingFiber
+  }
+  let createdFiber = createFiberFromText(text, returnFiber.mode)
+  createdFiber.return = returnFiber
+  return createdFiber
+}
+
+function createFiberFromText(text, mode) {
+  let fiber = new createFiber(HostText, text, null, mode)
+  fiber.expirationTime = nextRenderExpirationTime
+  return fiber
+}
+
+function deleteRemainingChildren(returnFiber, currentFirstChild) {
+  // 这个函数的作用是删除当前传进来的这个child节点以及它之后的兄弟节点
+  // 比如说当节点是文本类型且只有一个子节点的时候要删除
+  // 再比如说当删除多余的子节点 举个例子就是上一次有5个子节点 更新之后只有三个子节点 要删除多余的俩
+  // 还比如当前节点前后两次key不一样的情况就直接干掉他子节点们
+  while (!!currentFirstChild) {
+    // 要把所有的子节点都删除
+    deleteChild(returnFiber, currentFirstChild)
+    currentFirstChild = currentFirstChild.fiber
+  }
+  return null
+}
+
+function deleteChild(returnFiber, toBeDeleteChild) {
+  // 这里不会真的删除某个节点
+  // 像删除节点这种操作是在后面的commit阶段去做的
+  // 所以这里只是单纯的把这个节点自身置为Deletion就可以了
+  toBeDeleteChild.effectTag = Deletion
+  // 然后把这个要被删除的子节点的父节点(return)上的effect链更新一下
+  let last = returnFiber.lastEffect
+  if (!!last) {
+    last.nextEffect = toBeDeleteChild
+    returnFiber.lastEffect = toBeDeleteChild
+  } else {
+    returnFiber.firstEffect = returnFiber.lastEffect = toBeDeleteChild
+  }
+  // 之后由于这个节点都要被删除了 所以它自己的子节点们就没有必要更新
+  toBeDeleteChild.nextEffect = null
+}
+
+function useFiber(toBeCloneFiber, pendingProps) {
+  let clonedFiber = createWorkInProgress(toBeCloneFiber, pendingProps)
+  clonedFiber.index = 0
+  clonedFiber.sibling = null
+  return clonedFiber
+}
+// 调和子节点
 
 /* ---------根据类型更新fiber相关 */
 
@@ -957,11 +1114,12 @@ class ReactRoot {
     this.scheduleRootUpdate(current, element, expirationTime, callback)
   }
   scheduleRootUpdate = (current, element, expirationTime, callback) => {
+    // debugger
     let update = createUpdate(expirationTime)
     // payload应该是表示要更新的新的状态
     // 不过初次渲染的时候这个payload是根组件
     update.payload = { element }
-    update.payload = callback
+    update.callback = callback
 
     // enqueueUpdate是用来更新该fiber上的任务队列的
     // 初次渲染的时候就是要把根组件更新到RootFiber上
