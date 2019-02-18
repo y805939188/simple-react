@@ -24,11 +24,11 @@ function createElement(type, props = {}, children) {
 function Component(props, context, updater) {
   this.props = props
   this.context = context
-  this.refs = emptyObject
+  // this.refs = emptyObject
 
-  this.updater = updater || ReactNoopUpdateQueue
+  this.updater = updater || null
 }
-Component.prototype.isReactComponent = {}
+Component.prototype.isReactComponent = true
 
 const React = {
   createElement: function(type, props, children) {

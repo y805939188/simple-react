@@ -490,8 +490,8 @@ function createWorkInProgress(current, pendingProps) {
   let workInProgress = current.alternate
   if (!workInProgress) {
     workInProgress = createFiber(current.tag, pendingProps, current.key, current.mode)
-    // workInProgress.elementType = current.elementType;
-    // workInProgress.type = current.type;
+    workInProgress.elementType = current.elementType
+    workInProgress.type = current.type
     workInProgress.stateNode = current.stateNode
     // 这里把旧的fiber的alternate指向新的fiber
     // 然后把新的fiber的alternate指向旧的fiber
@@ -532,6 +532,7 @@ function workLoop(isYield) {
   if (!isYield) {
     // 如果不能暂停的话就一路solo下去
     while (!!nextUnitOfWork) {
+      debugger
       // 每个节点或者说每个react元素都是一个unit
       // 不管是真实dom节点还是class类或是函数节点
       nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
@@ -547,7 +548,7 @@ function workLoop(isYield) {
 
 function performUnitOfWork(workInProgress) {
   // beginWork就是开始工作 开始工作就是创建出子fiber节点
-  debugger
+  // debugger
   let next = beginWork(workInProgress)
   workInProgress.memoizedProps = workInProgress.pendingProps
 
@@ -716,7 +717,102 @@ function updateHostRoot(workInProgress) {
 // 更新FiberRoot节点
 
 // 更新ClassComponent节点
-function updateClassComponent(workInProgress) {}
+function updateClassComponent(workInProgress) {
+  let nextProps = resolveDefaultProps(workInProgress)
+  let component = workInProgress.type
+  let instance = workInProgress.stateNode
+  let shouldUpdate = false
+  // 初次渲染的时候class组件是没有current的
+  // 一般情况下 没有执行过setState的节点是没有alternate的
+  // 但是如果它的父节点执行了跳过更新或他的key一样 那就会给它创建alternate
+  // 比如有个组件 <Ding /> 内部执行了setState 然后会先找到root 再从root往下遍历
+  // 当遍历root时 发现root节点本身没有更新 那就会执行那个 bailoutOnAlreadyFinishedWork方法
+  // 这个方法会跳过root的更新同时如果这个 Ding 组件是root的第一个子节点的话就会给Ding组件执行createWorkInProgress
+  // 从而给Ding组件的fiber创建了一个alternate
+  // 或者当某个节点更新前后两次的key一样并且type啥的都没变的话 那会复用这个节点的fiber
+  // 在复用时会调用 useFiber 内部也会使用createWorkInProgress创建当前fiber的alternate
+  let current = workInProgress.alternate
+  if (instance === null) {
+    // 基本上没有实例说明是初次渲染
+    // 一般到这里都是没有current的 但是如果用了suspend组件之类的话
+    // 可能也会存在有current的情况 这里先不弄suspend组件相关的 以后再整
+    if (current !== null) {}
+    // 先初始化
+    constructorClassInstance(workInProgress, nextProps, component)
+    // 再挂载
+    mountClassInstance(workInProgress, nextProps, component)
+  } else {
+    // shouldUpdate = updateClassInstance()
+  }
+  return finishClassComponent()
+}
+
+function constructorClassInstance(workInProgress, nextProps, component) {
+  let context = null // context 相关暂时先不弄
+  let instance = new component(nextProps, context)
+  workInProgress.memoizedProps = instance.state || null
+  adoptClassInstance(workInProgress, instance)
+  return instance
+}
+
+function adoptClassInstance(workInProgress, instance) {
+  // 该方法先让Component构造函数中的this.updater = classComponentUpdater
+  // classComponentUpdater就是那个有enqueueSetState等方法的那个对象
+  // 也就是说根据平台不一样 这个updater是可能发生改变的 浏览器下肯定就是react-dom中的classComponentUpdater
+  instance.updater = classComponentUpdater
+  // 之后给当前class对应的fiber创建实例
+  workInProgress.stateNode = instance
+  // 这一步是为了以后在更新时可以方便的找到这个类对应的fiber
+  // 在组件中可以通过this._reactInternalFiber拿到对应fiber
+  // 在enqueueSetState中执行的 fiber = get(instance) 就是这么获取的
+  instance._reactInternalFiber = workInProgress
+}
+
+function mountClassInstance(workInProgress, nextProps, component) {
+  // 实例是在上面那个constructorClassInstance里头挂上的
+  let instance = workInProgress.stateNode
+  instance.props = nextProps
+  instance.state = workInProgress.memoizedState
+
+  // 初次渲染的时候updateQueue肯定是null的
+  // setState时可能会有多个update
+  let updateQueue = workInProgress.updateQueue
+  if (!!updateQueue) {
+    // 有updateQueue的时候要更新实例上的state
+    processUpdateQueue(workInProgress, instance)
+    instance.state = workInProgress.memoizedState
+  }
+
+  // 判断这个class组件是否有这个新的生命周期
+  let getDerivedStateFromProps = instance.getDerivedStateFromProps
+  if (!!getDerivedStateFromProps && typeof getDerivedStateFromProps === 'function') {
+    // 执行这个新的周期 更新instance上的state
+    applyDerivedStateFromProps(workInProgress, getDerivedStateFromProps, nextProps)
+  }
+  
+  // 应该还有别的声明周期比如什么componentWillMount
+  // 不过这种在下个版本里都要被做掉了 所以就不写了
+
+  if (typeof instance.componentDidMount === 'function') {
+    // 这里的意思就是说 如果用的人写了这个didMount方法的话
+    // 就给这个fiber加上一个 Update 的性质
+    // 这样呢 在之后的commit阶段 react就知道有这个周期方法
+    // 就会在挂载完成之后调用这个didMount
+    workInProgress.effectTag |= Update
+  }
+}
+
+function applyDerivedStateFromProps(workInProgress, getDerivedStateFromProps, nextProps) {
+  let prevState = workInProgress.memoizedProps
+  let partialState = getDerivedStateFromProps(nextProps, prevState) || {}
+  let newState = Object.assign({}, prevState, partialState)
+  workInProgress.memoizedState = newState
+}
+
+function finishClassComponent() {
+  
+}
+
 // 更新ClassComponent节点
 
 // 更新原生dom节点
@@ -871,6 +967,7 @@ function reconcileChildren(workInProgress, newChild) {
 }
 
 function reconcileChildFibers(workInProgress, newChild) {
+  // debugger
   // 在初次渲染阶段 除了RootFiber的workInProgress是有alternate的
   // 剩下它下面的任何子节点在初次渲染时候都没有alternate
   // 因为只有通过createWorkInProgress创建的workInProgress才会有alternate
@@ -946,8 +1043,12 @@ function createFiberFromElement(element, mode, expirationTime) {
 
 function createFiberFromTypeAndProps(type, key, pendingProps, mode, expirationTime) {
   let flag = null
-  if (type === 'function') {
+  if (typeof type === 'function') {
     // 进入这里说明是函数类型的组件或是class类
+    // flag = 
+    if (isClassComponent(type)) {
+      flag = ClassComponent
+    }
   } else if (typeof type === 'string') {
     // 进入这里说明可能是个原生节点比如 'div'
     flag = HostComponent
@@ -1022,6 +1123,26 @@ function useFiber(toBeCloneFiber, pendingProps) {
   return clonedFiber
 }
 // 调和子节点
+
+// 判断是否是class类型
+function isClassComponent(fn) {
+  // 这个isReactComponent属性是在 extends React.Component 的时候
+  // Component的prototype上带着的
+  return fn.prototype && fn.prototype.isReactComponent
+}
+// 判断是否是class类型
+
+// 合并defaultProps
+function resolveDefaultProps(workInProgress) {
+  let pendingProps = workInProgress.pendingProps
+  let component = workInProgress.type
+  let defaultProps = component.defaultProps
+  let resolvedProps = pendingProps
+  if (defaultProps && defaultProps instanceof Object) {
+    resolvedProps = Object.assign({}, defaultProps, pendingProps)
+  }
+  return resolvedProps
+}
 
 /* ---------根据类型更新fiber相关 */
 
@@ -1146,6 +1267,14 @@ class ReactRoot {
 /* ---------初次渲染相关 */
 
 
+
+const classComponentUpdater = {
+  // isMounted: 
+  enqueueSetState(instance, payload, callback) {
+
+  },
+  enqueueForceUpdate() {}
+}
 
 const ReactDOM = {
   render: function(element, container, callback) {
