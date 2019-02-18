@@ -741,16 +741,21 @@ function updateClassComponent(workInProgress) {
     constructorClassInstance(workInProgress, nextProps, component)
     // 再挂载
     mountClassInstance(workInProgress, nextProps, component)
+    // 之后让shouldUpdate变为true 表示需要更新
+    shouldUpdate = true
   } else {
-    // shouldUpdate = updateClassInstance()
+    // 进入这里说明已经存在实例 也就是说可能执行了setState
+    shouldUpdate = updateClassInstance(workInProgress, nextProps)
   }
-  return finishClassComponent()
+
+  // finishClassComponent这个方法就是返回下一个nextUnitOfWork
+  return finishClassComponent(workInProgress, shouldUpdate)
 }
 
 function constructorClassInstance(workInProgress, nextProps, component) {
   let context = null // context 相关暂时先不弄
   let instance = new component(nextProps, context)
-  workInProgress.memoizedProps = instance.state || null
+  workInProgress.memoizedState = instance.state || null
   adoptClassInstance(workInProgress, instance)
   return instance
 }
@@ -784,10 +789,14 @@ function mountClassInstance(workInProgress, nextProps, component) {
   }
 
   // 判断这个class组件是否有这个新的生命周期
-  let getDerivedStateFromProps = instance.getDerivedStateFromProps
+  let getDerivedStateFromProps = component.getDerivedStateFromProps
   if (!!getDerivedStateFromProps && typeof getDerivedStateFromProps === 'function') {
     // 执行这个新的周期 更新instance上的state
     applyDerivedStateFromProps(workInProgress, getDerivedStateFromProps, nextProps)
+    // 在上边这个方法中把workInP的memoizedState更新了
+    // 这里也要把实例上的state更新一下 因为新的生命周期可能会返回新的state
+    // 最终要把返回的state和之前的state合并
+    instance.state = workInProgress.memoizedState
   }
   
   // 应该还有别的声明周期比如什么componentWillMount
@@ -803,16 +812,58 @@ function mountClassInstance(workInProgress, nextProps, component) {
 }
 
 function applyDerivedStateFromProps(workInProgress, getDerivedStateFromProps, nextProps) {
-  let prevState = workInProgress.memoizedProps
+  let prevState = workInProgress.memoizedState
   let partialState = getDerivedStateFromProps(nextProps, prevState) || {}
-  let newState = Object.assign({}, prevState, partialState)
-  workInProgress.memoizedState = newState
+  let memoizedState = Object.assign({}, prevState, partialState)
+  workInProgress.memoizedState = memoizedState
 }
 
-function finishClassComponent() {
-  
+function updateClassInstance(workInProgress, newProps) {
+  let instance = workInProgress.stateNode
+  let oldState = workInProgress.memoizedState
+  let newState = null
+  let updateQueue = workInProgress.updateQueue
+  if (!!updateQueue) {
+    processUpdateQueue(workInProgress, instance)
+    newState = workInProgress.memoizedState
+  }
+
+  // 如果前后两次的props和state都相等的话就直接返回false作为shouldUpdate
+  let oldProps = workInProgress.memoizedProps
+  if ((oldProps === newProps) && (oldState === newState)) {
+    return false
+  }
+
+  // 执行这个新的周期 更新instance上的state
+  let getDerivedStateFromProps = instance.getDerivedStateFromProps
+  if (!!getDerivedStateFromProps && typeof getDerivedStateFromProps === 'function') {
+    applyDerivedStateFromProps(workInProgress, getDerivedStateFromProps, newProps)
+    newState = workInProgress.memoizedState
+  }
+
+  // 判断是否有shouldComponentUpdate这个周期 并直接返回这个周期的返回值作为shouldUpdate
+  let shouldComponentUpdateLife = instance.shouldComponentUpdate
+  if (typeof shouldComponentUpdateLife === 'function') {
+    return shouldComponentUpdate(newProps, newState)
+  }
+
+  // 其实这里应该还要判断一下是否是 PureComponent
+  // 但是这个比较简单 就是单纯浅对比了一下新旧State和Props
+  // 这个自己在react里判断都行 所以这儿就先不写了
+
+  // 其他任何情况都是要返回true作为shouldUpdate
+  return true
 }
 
+function finishClassComponent(workInProgress, shouldUpdate) {
+  // 如果返回不更新的话就直接调用bailxxx跳过更新
+  if (!shouldUpdate) return bailoutOnAlreadyFinishedWork(workInProgress)
+  let instance = workInProgress.stateNode
+  let nextChild = instance.render()
+  reconcileChildren(workInProgress, nextChild)
+  workInProgress.memoizedState = instance.state
+  return workInProgress.child
+}
 // 更新ClassComponent节点
 
 // 更新原生dom节点
