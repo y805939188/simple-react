@@ -46,7 +46,7 @@ import ReactDOM from './my-react/react-dom/react-dom'
 
 function Ding(props) {
   return <div>
-    <h1>{props.ding1}</h1>
+    <h1 style={{color: 'red'}}>{props.ding1}</h1>
     <h2>{props.ding2}</h2>
   </div>
 }

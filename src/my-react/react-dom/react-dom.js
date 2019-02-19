@@ -7,6 +7,7 @@ import {
   Placement,
   Update,
   PlacementAndUpdate,
+  ContentReset,
   Deletion,
   Callback,
   Snapshot
@@ -15,10 +16,13 @@ import {
   FunctionComponent,
   ClassComponent,
   IndeterminateComponent,
+  Fragment,
   HostRoot,
   HostComponent,
   HostText,
-  Mode
+  Mode,
+  ContextProvider,
+  ContextConsumer
 } from './ReactWorkTags'
 import {
   NoWork,
@@ -167,7 +171,7 @@ class FiberNode {
   
     this.mode = mode
   
-    // Effects
+    // Effects 0b000000000000
     this.effectTag = NoEffect // 表示该fiber的更新类型 一般有放置、替换、删除这三个
     this.nextEffect = null // 下一个effect的fiber 表示下一个更新
   
@@ -475,7 +479,9 @@ function renderRoot(root, isYield) {
   }
 
   // 这个workLoop就是要不停(或有停止)地递归生成fiber树
+  // debugger
   workLoop(isYield)
+  debugger
   root.finishedWork = root.current.alternate
   // pendingCommitExpirationTime在后面的commit过程中会用到
   root.pendingCommitExpirationTime = expirationTime
@@ -532,7 +538,7 @@ function workLoop(isYield) {
   if (!isYield) {
     // 如果不能暂停的话就一路solo下去
     while (!!nextUnitOfWork) {
-      debugger
+      // debugger
       // 每个节点或者说每个react元素都是一个unit
       // 不管是真实dom节点还是class类或是函数节点
       nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
@@ -560,7 +566,7 @@ function performUnitOfWork(workInProgress) {
     // 然后在completeUnitOfWork中找到兄弟节点作为next进行兄弟节点上的fiber的创建
     // 如果都到这里了 这next还是返回null 就说明这个root下的节点们都已经完成了fiber
     // 就可以进行下一步的commit了
-
+    // debugger
     next = completeUnitOfWork(workInProgress)
   }
   return next
@@ -614,7 +620,229 @@ function beginWork(workInProgress) {
 }
 
 function completeUnitOfWork(workInProgress) {
+  /*
+    能进入这个函数 说明当前这个workInProgress有一侧已经到头了
+    比如说:
+
+    <div>
+      |
+      |
+      | child 
+      |
+      ↓     sibling
+    <img> ——————————→ <img>
+      |
+      |
+      | child
+      | 
+      ↓    sibling         sibling
+     <p> ——————————→ <p> ——————————→ <p>
+      |
+      |
+      | child
+      |
+      ↓
+     null
+
+     遍历到一侧就是说 比如当前这个workInProgress是指代的img标签
+     那么img的child是一个p p的sibling是下一个p
+     当对img的第一个p执行完了beginWork 由于它没有子节点 所以 next = beginWork返回的next是null
+     这就是完成了一侧 这个时候就要进入这个completeUnitOfWork中
+  */
+ debugger
+  while(true) {
+    let current = workInProgress.alternate
+    let returnFiber = workInProgress.return
+    let siblingFiber = workInProgress.sibling
+
+    // let nextUnitOfWork = workInProgress
+    let nextUnitOfWork = completeWork(workInProgress)
+    resetChildExpirationTime(workInProgress)
+
+    // 几乎不会用到这个逻辑 因为除了suspense组件 其他类型nextUnitOfWork都是null
+    if (!!nextUnitOfWork) return nextUnitOfWork
+
+    // 接下来要构造出一条链表
+    // 给所有有effect的fiber构造
+    // 将来在commit的时候会找这条链表
+    // 这条链表上就是所有有effect的节点的
+    if (!!returnFiber) {
+      // 进到这里就是一个正常的情况
+
+      // firstEffect表示当前fiber的子节点中的第一个更新
+      // lastEffect表示当前fiber的子节点中的最后一个更新
+      // effectTag表示当前fiber自己的更新
+      // 然后这里会判断当前的fiber的父fiber
+      // 也就是returnFiber上是否有firstEffect
+      // 没有的话直接把当前fiber的firstEffect给它
+      // 然后把当前fiber的lastEffect也给它
+      // 之后判断当前fiber自己是否有更新 如果有的话
+      // 就让当前这个fiber的更新变成returnFiber的lastEffect
+      // 也就是说最后在根节点上的firstEffect和lastEffect的结构
+      // 或者说这条链表表示的更新顺序是
+
+      /*
+        d: 最深处的
+        c: 子节点(的)
+        f: 父节点(的)
+        s: 兄弟节点(的)
+        
+        dc → dcs → dcf → dcfsc → dcfscs → dcfs → dcff
+        
+        或者说顺序是:
+          div 7
+            div 3
+              div 1
+              div 2
+            div 6
+              div 4
+              div 5
+
+        最后这个链表会记录到RootFiber上也就是最终生成的finishedWork
+      */
+
+      if (returnFiber.firstEffect === null) {
+        // 进入这里表示当前这个fiber的父节点上还没有记录任何一个有副作用的子节点
+        // 然后就直接把当前节点的第一个副作用节点赋值给父节点
+        returnFiber.firstEffect = workInProgress.firstEffect
+      }
+      if (!!workInProgress.lastEffect) {
+        if (!!returnFiber.lastEffect) {
+          // 如果父节点上已经有了副作用节点
+          // 那就把当前这个节点的副作用挂到父节点的副作用的末尾
+          returnFiber.lastEffect.nextEffect = workInProgress.firstEffect
+        }
+        // 然后更新父节点的最后一个effect节点
+        returnFiber.lastEffect = workInProgress.lastEffect
+      }
+
+      // 初次渲染时 比如有个class类渲染
+      // 那么类里面的render返回值上不会有effectTag 只会在class类自己本身这个fiber上有
+      // 初次渲染时可能会是 3 因为在finishClassComponent方法中会 |= 一个PerformedWork(1)
+      // 而当对RootFiber执行beginWork 调度子节点的时候 如果RootFiber的child是class组件的话
+      // 当进入了reconcileChildren时 由于RootFiber有current 所以不会进入mount调度的逻辑
+      // 于是当执行placeSingleChild的时候 会判断是否是执行的mount的逻辑
+      // 如果是mount逻辑的话 那么就不给他加 Placement 如果不是mount的逻辑 那么就给他加个Placement的标识
+      // 在react源码中调试的话 如果RootFiber下有个child是class组件 那么它走到这里时
+      // 它的effectTag可能会是3 也就是 Placrment + PerformedWork
+      // 这儿PerformedWork应该没什么太大用 源码中的注释标识这个performedWork是给devTools用的
+
+      let effectTag = workInProgress.effectTag
+      // 每个fiber上都有effectTag和firstEffect跟lasteEffect
+      // effectTag是标识这个fiber自己本身有何种更新
+      // 而firstEffect和lasteEffect是当前fiber需要更新的子节点们的链表
   
+      // & 的意思就是看effectTag上是否有这个标志
+      // 比如 Placement 是0b000000000010
+      // 如果effectTag是Placement(0b000000000010)或PlacementAndUpdate(0b000000000110)的话
+      // 那么执行 effectTag & Placement 会返回一个非0的数
+      // 反之如果effectTag没有Placement之类的标志 那么就会返回0
+
+      let workInProgressHasEffect =
+        !!(effectTag & Placement) || // 插入或者放置
+        !!(effectTag & Update) || // 更新
+        !!(effectTag & PlacementAndUpdate) || // 这个可能是元素换位置了
+        !!(effectTag & Deletion) || // 这个是删除
+        !!(effectTag & ContentReset) // 这个是更新了文本
+      // 然后就要把当前节点的父节点的last和firsteffect更新为当前节点
+      if (workInProgressHasEffect) {
+        if (!!returnFiber.lastEffect) {
+          // 进入这里说明之前returnFiber上就存在待更新的节点
+          // 那就把当前节点作为lastEffect
+          returnFiber.lastEffect.nextEffect = workInProgress
+        } else {
+          // 进入这里说明之前returnFiber上没有待更新的节点
+          // 就可以直接让firstEffect等于当前节点的fiber
+          returnFiber.firstEffect = workInProgress
+        }
+        returnFiber.lastEffect = workInProgress
+      }
+    }
+
+    // 如果有兄弟节点的话 优先把兄弟节点作为next返回
+    if (!!siblingFiber) return siblingFiber
+    // 没有兄弟节点的话往上找它的父节点 returnFiber
+    if (!!returnFiber) {
+      workInProgress = returnFiber
+      continue
+    }
+    return null
+  }
+  return null
+}
+
+function completeWork(workInProgress) {
+  let tag = workInProgress.tag
+  if (tag === FunctionComponent) return null
+  if (tag === ClassComponent) return null
+  if (tag === HostRoot) return null
+  if (tag === Fragment) return null
+  if (tag === ContextProvider) return null
+  if (tag === ContextConsumer) return null
+  if (tag === HostComponent) {
+
+    let instance = workInProgress.stateNode
+    let type = workInProgress.type
+    let props = workInProgress.pendingProps
+    if (!instance) {
+      instance = createInstance(type, props, workInProgress)
+      appendAllChildren(instance, workInProgress)
+      // 这里会对该元素进行一堆事件的初始化
+      // 把事件绑定到document上
+      finalizeInitialChildren(instance, type, props)
+      workInProgress.stateNode = instance
+    }
+    return null
+  }
+  if (tag === HostText) {
+    return null
+  }
+  // 这里其实在react源码中还有好多其他类型
+  // 比如suspense组件 lazy组件 memo组件等等
+  // 基本上除了SuspenseComponent组件之外
+  // 剩下的tag类型都是返回的null
+  return null
+}
+
+function createInstance(type, props, workInProgress) {
+  let children = props.children
+  if (typeof children === 'string' || typeof children === 'number') {
+    // 这里要对一些特殊标签进行一些特殊处理
+  }
+  // let domElement = createElement()
+  let domElement = document.createElement(type)
+  domElement.__reactInternalInstance = workInProgress
+  return domElement
+}
+
+function appendAllChildren(parentInstance, workInProgress) {
+  return
+  let node = workInProgress.child
+  while (!!node) {
+
+  }
+}
+
+function finalizeInitialChildren(instance, type, props) {
+  // debugger
+  for (let propKey in props) {
+    // 这一步是确保排除原型链上的
+    if (!props.hasOwnProperty(propKey)) continue
+    let prop = props[propKey]
+    if (propKey === 'style') {
+      let styles = prop
+      let domStyle = instance.style
+      for (let styleName in styles) {
+        if (!styles.hasOwnProperty(styleName)) continue
+        let styleValue = styles[styleName].trim()
+        domStyle[styleName] = styleValue
+      }
+    } else if (propKey === 'children') {
+      if (typeof prop === 'string') {
+        instance.textContent = prop
+      }
+    }
+  }
 }
 
 function bailoutOnAlreadyFinishedWork(workInProgress) {
@@ -695,6 +923,27 @@ function scheduleWork(fiber, expirationTime) {
     // 
     requestWork(root, root.expirationTime)
   }
+}
+
+// resetChildExpirationTime主要作用是用来更新childExpirationTime的
+// 因为假设当同时有两个子树都产生了更新
+// 其中一个优先级高 另一个优先级低一点
+// 更新完优先级高的那个 如果不修改这个childExpirationTime的话 就更新不到优先级低的那个了
+function resetChildExpirationTime(workInProgress) {
+  let child = workInProgress.child
+  let newChildExpirationTime = NoWork
+  while (!!child) {
+    let childUpdateExpirationTime = child.expirationTime
+    let childChildExpirationTime = child.childExpirationTime
+    if (childUpdateExpirationTime > newChildExpirationTime) {
+      newChildExpirationTime = childUpdateExpirationTime
+    }
+    if (childChildExpirationTime > newChildExpirationTime) {
+      newChildExpirationTime = childChildExpirationTime
+    }
+    child = child.sibling
+  }
+  workInProgress.childExpirationTime = newChildExpirationTime
 }
 /* ---------更新任务队列相关 */
 
@@ -882,6 +1131,10 @@ function updateHostComponent(workInProgress) {
   // let tag = workInProgress.type // 获取元素的名称 比如一个 'div'
   let nextProps = workInProgress.pendingProps // 获取属性 就是ReactElement方法的第二个参数
   let nextChildren = nextProps.children
+  let type = workInProgress.type
+  if (typeof nextChildren === 'string' || typeof nextChildren === 'number') {
+    nextChildren = null
+  }
   // let prevProps = null
   // let current = workInProgress.alternate
   // if (!!current) prevProps = current.memoizedProps
@@ -1037,16 +1290,19 @@ function cloneUpdateQueue(currentQueue) {
 // 调和子节点
 function reconcileChildren(workInProgress, newChild) {
   // debugger
-  // let current = workInProgress.alternate
-  // if (!!current) {
-    workInProgress.child = reconcileChildFibers(workInProgress, newChild)
-  // } else {
-    // 进入这里说明没有current 一般不会发生在初次渲染
-  // }
+  // 初次渲染时 只有第一个RootFiber有current
+  // 其他任何字节点都没有 都走mountChildFibers
+  let current = workInProgress.alternate
+  let isMount = !!current ? false : true
+  if (!!current) {
+    workInProgress.child = reconcileChildFibers(workInProgress, newChild, isMount)
+  } else {
+    workInProgress.child = reconcileChildFibers(workInProgress, newChild, isMount)
+  }
   return workInProgress.child
 }
 
-function reconcileChildFibers(workInProgress, newChild) {
+function reconcileChildFibers(workInProgress, newChild, isMount) {
   // debugger
   // 在初次渲染阶段 除了RootFiber的workInProgress是有alternate的
   // 剩下它下面的任何子节点在初次渲染时候都没有alternate
@@ -1059,12 +1315,15 @@ function reconcileChildFibers(workInProgress, newChild) {
     // 说明newChild是个对象 可能是react元素
     if (newChild.$$typeof === Symbol.for('react.element')) {
       // $$typeof:Symbol(react.xxx) 是react元素的标志
-      return reconcileSingleElement(workInProgress, currentFirstChild, newChild)
+      return placeSingleChild(
+        reconcileSingleElement(workInProgress, currentFirstChild, newChild),
+        isMount
+      )
     }
   }
   if (newChild instanceof Array) {
     // 说明newChild是个数组 数组可能是好多同级的react元素
-    return reconcileChildrenArray(workInProgress, currentFirstChild, newChild)
+    return reconcileChildrenArray(workInProgress, currentFirstChild, newChild, isMount)
   }
   if (typeof newChild === 'string' || typeof newChild === 'number') {
     // 说明newChild是个文本类型的
@@ -1111,13 +1370,22 @@ function reconcileSingleElement(returnFiber, currentFirstChild, element) {
   }
   if (element.type !== Symbol.for('react.fragment')) {
     createdFiber = createFiberFromElement(element, returnFiber.mode)
+    createdFiber.return = returnFiber
   } else {
     // 这里暂时先不处理fragment的情况
   }
   return createdFiber
 }
 
-function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren) {
+function placeSingleChild(newFiber, isMount) {
+  // debugger
+  if (!isMount && !newFiber.alternate) {
+    newFiber.effectTag = Placement
+  }
+  return newFiber
+}
+
+function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren, isMount) {
   // debugger
   // react 源码中在处理数组类型的子节点时 用了一堆特别复杂的算法对比key和index等等东西
   // 我这里先不用他那个大算法了 那个确实比较复杂 等回头我再慢慢加上优化
@@ -1133,7 +1401,7 @@ function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren) {
   for (let i = 0; i < newChildren.length; i++) {
     let newFiber = createChild(returnFiber, newChildren[i])
     if (!newFiber) continue
-    placeChild(newFiber, i)
+    placeChild(newFiber, i, isMount)
 
     if (firstChild === null) {
       firstChild = newFiber
@@ -1160,8 +1428,9 @@ function createChild(returnFiber, newChild) {
   return createdFiber
 }
 
-function placeChild(newFiber, newIndex) {
+function placeChild(newFiber, newIndex, isMount) {
   newFiber.index = newIndex
+  if (isMount) return
   newFiber.effectTag = Placement
 }
 
