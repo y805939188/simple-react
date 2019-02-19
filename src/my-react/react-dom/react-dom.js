@@ -567,6 +567,7 @@ function performUnitOfWork(workInProgress) {
 }
 
 function beginWork(workInProgress) {
+  // debugger
   let next = null
   let tag = workInProgress.tag
 
@@ -588,7 +589,13 @@ function beginWork(workInProgress) {
     }
   }
 
-  if (tag === HostRoot) {
+  if (tag === IndeterminateComponent) {
+    // tag默认是indeterminate类型
+    // 初次渲染时的function类型组件会走这里离
+    // 因为不确定function的返回值会是啥玩意儿
+    // 根据函数的返回值 会在这个方法中确定workInProgress的tag类型
+    next = mountIndeterminateComponent(workInProgress)
+  } else if (tag === HostRoot) {
     // debugger
     next = updateHostRoot(workInProgress)
   } else if (tag === FunctionComponent) {
@@ -889,6 +896,24 @@ function updateHostText(workInProgress) {
 }
 // 更新文本节点
 
+// 更新不确定类型的节点
+function mountIndeterminateComponent(workInProgress) {
+  // 一般来讲 在初次渲染时除了RootFiber 剩下的节点都没有alternate
+  let props = workInProgress.pendingProps
+  let value = workInProgress.type(props)
+  // react源码中这里判断了返回值是否是对象并且是否有render方法
+  // 如果有的话就把这个返回对象当成一个class类来处理
+  // 也就是说如果函数返回类似 { render: function(){} }
+  // 这样的类型react也能处理 当成class处理 同样的里头写的周期方法也能执行
+  // 不过我觉得这玩意儿吧, 可以, 但没必要 哪儿有人这么写呀
+  // 所以我这儿也就不写了
+
+  // 直接给它当成Function类型的
+  workInProgress.tag = FunctionComponent
+  return reconcileChildren(workInProgress, value)
+}
+// 更新不确定类型的节点
+
 // 更新state
 function processUpdateQueue(workInProgress, instance) {
   // react在更新的时候最受的规则是
@@ -1093,7 +1118,9 @@ function createFiberFromElement(element, mode, expirationTime) {
 }
 
 function createFiberFromTypeAndProps(type, key, pendingProps, mode, expirationTime) {
-  let flag = null
+  // Indeterminate是模糊的,不确定的意思
+  // 初次渲染时 如果某个组件是function类型的话 就会先给这个组件一个Indeterminate
+  let flag = IndeterminateComponent 
   if (typeof type === 'function') {
     // 进入这里说明是函数类型的组件或是class类
     // flag = 

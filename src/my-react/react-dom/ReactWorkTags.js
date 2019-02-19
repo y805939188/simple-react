@@ -2,7 +2,7 @@
 
 export const FunctionComponent = 0 // 函数类型
 export const ClassComponent = 1 // class类型
-export const IndeterminateComponent = 2 // 这个会在函数组件初次渲染时用到
+export const IndeterminateComponent = 2 // Indeterminate是模糊的意思, 这个会在函数组件初次渲染时用到
 export const HostRoot = 3 // Root的类型
 export const HostPortal = 4 // portal组件会用到
 export const HostComponent = 5 // 原生dom节点的类型
