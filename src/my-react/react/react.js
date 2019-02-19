@@ -13,11 +13,15 @@ function ReactElement(type, key, props) {
 }
 
 function createElement(type, props = {}, children) {
+  // debugger
   let _props = Object.assign({}, props)
   let _key = _props.key || null
   // 其实这里还应该处理一下ref
   // // 当有多个children时 children可以不按照数组的形式传
-  _props.children = arguments.length - 2 === 1 ? children : arguments.slice(2)
+  // _props.children = arguments.length - 2 === 1 ? arguments[2] : arguments.slice(2)
+  // _props.children = (children.length === 1) ? children[0] : children
+  let children_length = children.length
+  _props.children = children_length === 0 ? null : children_length === 1 ? children[0] : children
   return ReactElement(type, _key, _props)
 }
 
@@ -31,7 +35,7 @@ function Component(props, context, updater) {
 Component.prototype.isReactComponent = true
 
 const React = {
-  createElement: function(type, props, children) {
+  createElement: function(type, props, ...children) {
     // console.log(type, props, children)
     let element = createElement(type, props, children)
     // 然后应该做一些校验比如children或者props之类的

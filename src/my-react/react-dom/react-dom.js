@@ -560,9 +560,9 @@ function performUnitOfWork(workInProgress) {
     // 然后在completeUnitOfWork中找到兄弟节点作为next进行兄弟节点上的fiber的创建
     // 如果都到这里了 这next还是返回null 就说明这个root下的节点们都已经完成了fiber
     // 就可以进行下一步的commit了
+
+    next = completeUnitOfWork(workInProgress)
   }
-  // console.log(next)
-  // return null
   return next
 }
 
@@ -611,6 +611,10 @@ function beginWork(workInProgress) {
   workInProgress.expirationTime = NoWork
   // console.log(next)
   return next
+}
+
+function completeUnitOfWork(workInProgress) {
+  
 }
 
 function bailoutOnAlreadyFinishedWork(workInProgress) {
@@ -1060,6 +1064,7 @@ function reconcileChildFibers(workInProgress, newChild) {
   }
   if (newChild instanceof Array) {
     // 说明newChild是个数组 数组可能是好多同级的react元素
+    return reconcileChildrenArray(workInProgress, currentFirstChild, newChild)
   }
   if (typeof newChild === 'string' || typeof newChild === 'number') {
     // 说明newChild是个文本类型的
@@ -1069,7 +1074,6 @@ function reconcileChildFibers(workInProgress, newChild) {
 }
 
 function reconcileSingleElement(returnFiber, currentFirstChild, element) {
-  let expirationTime = nextRenderExpirationTime
   let createdFiber = null
   while (currentFirstChild !== null) {
     // 这里要对key做优化
@@ -1106,14 +1110,63 @@ function reconcileSingleElement(returnFiber, currentFirstChild, element) {
     currentFirstChild = currentFirstChild.sibling
   }
   if (element.type !== Symbol.for('react.fragment')) {
-    createdFiber = createFiberFromElement(element, returnFiber.mode, expirationTime)
+    createdFiber = createFiberFromElement(element, returnFiber.mode)
   } else {
     // 这里暂时先不处理fragment的情况
   }
   return createdFiber
 }
 
-function createFiberFromElement(element, mode, expirationTime) {
+function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren) {
+  // debugger
+  // react 源码中在处理数组类型的子节点时 用了一堆特别复杂的算法对比key和index等等东西
+  // 我这里先不用他那个大算法了 那个确实比较复杂 等回头我再慢慢加上优化
+
+  if (!!currentFirstChild) {
+    // 如果有子节点的话 就直接都干掉
+    // 不过react里进行了特别屌的复杂度是 O(n) 的优化
+    deleteRemainingChildren(returnFiber, currentFirstChild)
+  }
+  // 根据本次的newChildren生成新的fiber
+  let firstChild = null
+  let prevFiber = null
+  for (let i = 0; i < newChildren.length; i++) {
+    let newFiber = createChild(returnFiber, newChildren[i])
+    if (!newFiber) continue
+    placeChild(newFiber, i)
+
+    if (firstChild === null) {
+      firstChild = newFiber
+    } else {
+      prevFiber.sibling = newFiber
+    }
+    prevFiber = newFiber
+  }
+  return firstChild
+}
+
+function createChild(returnFiber, newChild) {
+  if (!newChild) return null
+  let createdFiber = null
+  if (typeof newChild === 'string' || typeof newChild === 'number') {
+    createdFiber = createFiberFromText(String(newChild), returnFiber.mode)
+  }
+  if (newChild instanceof Object) {
+    if (newChild.$$typeof === Symbol.for('react.element')) {
+      createdFiber = createFiberFromElement(newChild, returnFiber.mode)
+    }
+  }
+  createdFiber.return = returnFiber
+  return createdFiber
+}
+
+function placeChild(newFiber, newIndex) {
+  newFiber.index = newIndex
+  newFiber.effectTag = Placement
+}
+
+function createFiberFromElement(element, mode) {
+  let expirationTime = nextRenderExpirationTime
   return createFiberFromTypeAndProps(element.type, element.key, element.props, mode, expirationTime)
 }
 
@@ -1196,6 +1249,11 @@ function deleteChild(returnFiber, toBeDeleteChild) {
 
 function useFiber(toBeCloneFiber, pendingProps) {
   let clonedFiber = createWorkInProgress(toBeCloneFiber, pendingProps)
+  // 如果当前这个fiber没有兄弟节点 也就是说它的父节点只有它一个子节点的情况时候
+  // 就不需要使用index做对比算法
+  // 基本上只有在父节点存在多个子元素的情况下才需要index
+  // 这里把克隆出来的fiber的index置为0
+  // 在处理array类型的子元素时还会对index根据循环进行赋值的
   clonedFiber.index = 0
   clonedFiber.sibling = null
   return clonedFiber
