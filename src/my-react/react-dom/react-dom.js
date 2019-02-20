@@ -20,7 +20,7 @@ import {
   HostRoot,
   HostComponent,
   HostText,
-  Mode,
+  // Mode,
   ContextProvider,
   ContextConsumer
 } from './ReactWorkTags'
@@ -36,31 +36,33 @@ import {
 
 let nextUnitOfWork = null
 let nextRoot = null
+let nextEffect = null
 
 let noTimeout = -1 // 这个没啥b用 就是单纯告诉你不延时
 
-var firstScheduledRoot = null;
-var lastScheduledRoot = null;
+// let firstScheduledRoot = null
+// let lastScheduledRoot = null
 
-var callbackExpirationTime = NoWork;
-var callbackID = void 0;
-var isRendering = false;
-var nextFlushedRoot = null;
-var nextFlushedExpirationTime = NoWork;
-var lowestPriorityPendingInteractiveExpirationTime = NoWork;
-var hasUnhandledError = false;
-var unhandledError = null;
+// let callbackExpirationTime = NoWork
+// let callbackID = void 0
+let isRendering = false
+let nextFlushedRoot = null
+let nextFlushedExpirationTime = NoWork
+// let lowestPriorityPendingInteractiveExpirationTime = NoWork
+// let hasUnhandledError = false
+// let unhandledError = null
 
 // 这几个是控制是否批量更新的全局变量
-var isBatchingUpdates = false;
-var isUnbatchingUpdates = false;
-var isBatchingInteractiveUpdates = false;
+let isBatchingUpdates = false
+let isUnbatchingUpdates = false
+let isBatchingInteractiveUpdates = false
 
-var completedBatches = null;
+// let completedBatches = null
 
-var originalStartTimeMs = performance.now()
-var currentRendererTime = msToExpirationTime(originalStartTimeMs)
-var currentSchedulerTime = currentRendererTime
+// 这几个是用来记录react应用最初执行时间以及计算currentTime的
+let originalStartTimeMs = performance.now()
+let currentRendererTime = msToExpirationTime(originalStartTimeMs)
+let currentSchedulerTime = currentRendererTime
 
 let expirationContext = NoWork
 
@@ -430,6 +432,7 @@ function performWorkOnRoot(root, expirationTime, isYield) {
     completeRoot(root, finishedWork, expirationTime)
   } else {
     renderRoot(root, isYield)
+    debugger
     if (!!root.finishedWork) {
       if ( !isYield || (isYield && shouldYieldToRenderer()) ) {
         // 在renderRoot中会给root挂上最终生成的这个finishedWork 也就是fiber树
@@ -438,7 +441,7 @@ function performWorkOnRoot(root, expirationTime, isYield) {
         // 如果不是同步是异步的也就是说允许暂停的情况的话
         // 就通过shouldYieldToRenderer这个方法判断是否还有剩余时间来渲染
         // 有的话再渲染 没有的话就等下一帧再说
-        completeRoot(root, root.finishedWork, expirationTime)
+        completeRoot(root, root.finishedWork)
       }
     }
   }
@@ -481,8 +484,75 @@ function renderRoot(root, isYield) {
   // 这个workLoop就是要不停(或有停止)地递归生成fiber树
   // debugger
   workLoop(isYield)
-  debugger
+  // debugger
   root.finishedWork = root.current.alternate
+  // debugger
+
+
+  // 在初次渲染时 肯定会给RootFiber一个current
+  // 所以当在调度RootFiber的子节点的时候 根据current有或无 来判断是直接reconcilec还是mount
+  // 所以肯定会给它的子节点
+  // 不管是class类也好 函数组件也好 或者原生dom节点也好
+  // 一定会有个effectTag是Placement 表示RootFiber下的这个firstChild在commit阶段要被放置
+  // 之后这个RootFiber.child调度完了该调度RootFiber的孙子们了 也就是被Placement的这个child的子节点们了
+  // 但是这个时候 这个节点本身包括它的子节点们均不会再生成current 也就是说在调度子节点的过程中
+  // 会直接走mount的过程 mount的过程中不会给他们加上Placement 说他们的effectTag都是0
+  // 所以当next === null 执行completeUnitOfWork时 只有一个fiber会作为有effect的fiber挂到finishedWork上
+  // 也就是RootFiber的firstChild 这个firstChild会作为Root的firstEffect和lastEffect
+
+  // 并且在completeUnitOfWork中会执行completeWork(workInProgress)
+  // 这个函数中会特殊处理HostComponent类型的fiber 也就是原生dom的类型
+  // 会先根据type来createElement 然后把props设置到这个元素节点上
+  // 之后appendAllChild 如果这个节点有child的话并且这个节点是真实dom
+  // 就给他appendChild咯 之后再初始化一些event相关的
+
+  // 最后在commit阶段 由于是初次渲染 只会有一个Placement
+  // 然后在commit阶段的第二个whule循环中 把这个dom节点挂载到真实的container上
+
+  /*
+    比如RootFiber下有这么个fiber结构:
+      div
+        h1
+        h2
+        Ding
+          span
+
+      首先在调度RootFiber下的firstChild也就是div的时候 会给div上一个Placement的effectTag
+      然后调度h1 发现h1没有child 于是对h1执行 completeUnitOfWork
+      completeUnitOfWork中执行completeWork 创建h1的真实dom节点
+      然后执行appendAllChildren 发现它没有child直接退出
+      之后执行finalizeInitialChildren 在这里面并把props给它设置上并将h1下的文本给inner咯
+      
+      随后往下走 发现h1有兄弟节点 返回兄弟节点h2的fiber作为next
+      继续执行performUnitOfWork
+      执行时发现h2的child也是null 于是又进入completeUnitOfWork
+      然后就是和h1一样的逻辑 创建h2的真实dom 给props 插入文本节点 等
+      之后返回Ding组件
+
+      接下来就是Ding组件调度它的span子节点
+      调度完把span的fiber作为next执行下一次的performUnitOfWork继续调度span的子节点
+      然后发现span没有子节点 于是又进入completeUnitOfWork
+      和h1与h2的逻辑一样
+      之后发现它没有兄弟节点于是把它的父节点也就是return作为下一个fiber继续completeUnitOfWork
+
+      它的父fiber是Ding组件 Ding组件由于是个ClassComponent 所以没有太多的处理
+      Ding组件又没有兄弟节点 于是返回Ding组件的父fiber也就是div继续下一轮的completeUnitOfWork
+
+      之后也会执行completeWork
+      也会给div生成真实dom
+      之后执行appendAllChildren 这个时候div可是有child的 那就是h1
+      于是把h1给appendChild到div下 接下来根据appendAllChildren方法中的逻辑
+      也会把h2 以及Ding组件下的span都给appendChild到div下 这样就完成了一个真正的dom树了
+      之后初始化div的event事件系统
+
+      最后commit阶段 由于是初次渲染 所以只会对有着Placement标志的div进行Placement
+      这样就把刚才的div对应的stateNode挂载到了container上 从而完成了初次渲染
+  */
+      
+
+  if (!root.finishedWork) return // 如果没有的话说明出错了或者压根儿没节点
+
+  // console.log(root.finishedWork)
   // pendingCommitExpirationTime在后面的commit过程中会用到
   root.pendingCommitExpirationTime = expirationTime
 }
@@ -649,13 +719,15 @@ function completeUnitOfWork(workInProgress) {
      当对img的第一个p执行完了beginWork 由于它没有子节点 所以 next = beginWork返回的next是null
      这就是完成了一侧 这个时候就要进入这个completeUnitOfWork中
   */
- debugger
+//  debugger
   while(true) {
     let current = workInProgress.alternate
     let returnFiber = workInProgress.return
     let siblingFiber = workInProgress.sibling
 
     // let nextUnitOfWork = workInProgress
+    // 这个completeWork中会执行对原生dom节点的创建
+    // 属性的设置child的append等操作
     let nextUnitOfWork = completeWork(workInProgress)
     resetChildExpirationTime(workInProgress)
 
@@ -780,7 +852,6 @@ function completeWork(workInProgress) {
   if (tag === ContextProvider) return null
   if (tag === ContextConsumer) return null
   if (tag === HostComponent) {
-
     let instance = workInProgress.stateNode
     let type = workInProgress.type
     let props = workInProgress.pendingProps
@@ -816,10 +887,68 @@ function createInstance(type, props, workInProgress) {
 }
 
 function appendAllChildren(parentInstance, workInProgress) {
-  return
+  debugger
+  // 如果它有child的话
+  // 也就是说fiber树的叶子节点不会走这个while循环
+  // 该函数主要就是把原生dom的子节点都添加到当前parent下
+  // 比如:
+  // div 有child走下面那个循环
+  //   span 有child 走下面那个循环
+  //     h1 没有child不走这里
+  //     h2 没有child不走这里
+  //     Ding 组件类型 有child 走下面的循环
+  //       h3 没有 child不走这里 但是会直接把h3放在h2的后面
   let node = workInProgress.child
   while (!!node) {
+    let tag = node.tag
+    if (tag === HostComponent || tag === HostText) {
+      // 如果这个tag就是原生dom节点或者文本类型的话
+      // 那就把这个child的实例直接append到parent下
+      parentInstance.appendChild(node.stateNode)
+    } else if (!!node.child) {
+      // 进入这里说明这个child可能是个class组件或者函数组件之类的非原生节点类型
+      // 那么就把node置为它的第一个child 然后重新执行循环
+      // 就像上面例子中那个Ding组件下的h3要放在h2的后面一样
+      node.child.return = node
+      node = node.child
+      continue
+    }
+    if (node === workInProgress) {
+      // 因为上面一直在往下遍历child
+      // 所以下面那个while循环会往上遍历
+      return
+    }
+    while (node.sibling === null) {
+      if (node.return === null || node.return === workInProgress) return
+      // 当这个child没有兄弟节点了就要往上遍历它的父fiber了
+      // 直到发现父fiber就是当前这个parent了才退出
+      // 否则就一直往上遍历直到找到一个有兄弟节点的父fiber
+      node = node.return
+    }
+    // 走到这里时当前这个child有兄弟节点的情况
+    // 有兄弟节点的话就让兄弟节点作为node进行下一次循环
+    node.sibling.return = node.return
+    node = node.sibling
 
+    /*
+      比如:
+        div
+          Ding1
+            h1
+          Ding2
+            h2
+            h3
+
+        遍历到Ding1时 发现它不是原生节点类型就直接用child 也就是h1进行下一轮循环
+        第二轮循环中的h1 被append到了div下 然后发现它没有兄弟节点 就往上找到Ding1
+        找到Ding1后发现Ding1有个兄弟节点Ding2 然后用Ding2进行下一轮的循环
+        之后Ding2同样直接把h2作为下一轮的循环node 然后h2也会被append到div下
+        然后往下走发现h2有个h3的兄弟节点 于是把它的兄弟节点h3作为下一轮的循环node
+        h3也会被append到div下
+        再然后h3没有兄弟节点就往上遍历到Ding2 Ding2也没有兄弟节点了就再往上遍历
+        最后终于遍历到div 发现div就是传进来的这个workInProgress
+        于是return
+    */
   }
 }
 
@@ -890,10 +1019,73 @@ function bailoutOnAlreadyFinishedWork(workInProgress) {
   }
 }
 
-function completeRoot() {
-
+function completeRoot(root, finishedWork) {
+  // 因为马上要提交(commit)了 所以root的finishedWork可以置为空了
+  // 每次执行setState的时候 finishedWork要从0开始
+  root.finishedWork = null
+  commitRoot(root, finishedWork)
 }
 
+function commitRoot(root, finishedWork) {
+  // debugger
+  // 这俩全局变量表明现在的工作状态
+  isWorking = true
+  isCommitting = true
+
+  // let committedExpirationTime = root.pendingCommitExpirationTime
+  // root.pendingCommitExpirationTime = null
+
+  // let updateExpirationTimeBeforeCommit = finishedWork.expirationTime
+  // let childExpirationTimeBeforeCommit = finishedWork.childExpirationTime
+  // let earliestRemainingTimeBeforeCommit = childExpirationTimeBeforeCommit > updateExpirationTimeBeforeCommit ? childExpirationTimeBeforeCommit : updateExpirationTimeBeforeCommit
+  // markCommittedPriorityLevels(root, earliestRemainingTimeBeforeCommit)
+
+  let firstEffect = null
+  if (!!finishedWork.effectTag) {
+    // effectTag > 0 说明finishedWork头上有更新
+    // 如果这个RootFiber上也有更新的话
+    // 就把这个RootFiber也加入到他的effect的链表的最后
+    if (!!finishedWork.lastEffect) {
+      finishedWork.lastEffect.nextEffect = finishedWork
+      firstEffect = finishedWork.firstEffect
+    } else {
+      firstEffect = finishedWork
+    }
+  } else {
+    // 如果RootFiber上没有更新的话 就从它的firstEffect开始
+    firstEffect = finishedWork.firstEffect
+  }
+
+  // 之后一共有三个循环
+  // 每次循环之前都要先获得firstEffect
+  // 也就是需要commit的第一个fiber
+
+  // 这个循环主要就是调用组件上面的getSnapshotBeforeUpdate这么个生命周期方法
+  nextEffect = firstEffect // nextEffect是全局变量 用来记录当前正在操作的effect对应的fiber
+  while (!!nextEffect) {
+    try {
+      commitBeforeMutationLifecycles()
+    } catch (err) {
+      console.log(err)
+    }
+  }
+
+  // 每次循环之前都要重新nextEffect
+  // 因为在上一次循环中已经被置为null了
+  // 第二个循环主要目的是操作真实dom节点了 要正儿八经地实现挂载了
+  // 比如dom节点的新增 插入 删除 更新等操作
+  nextEffect = firstEffect
+  while (!!nextEffect) {
+    try {
+      commitAllHostEffects()
+    } catch (err) {
+      console.log(err)
+    }
+  }
+
+
+}
+     
 function requestWork(root, expirationTime) {
   // 如果isRendering是true说明目前正在更新fiber树
   // 这种情况不需要再执行requestWork 因为异步调度的关系
@@ -946,6 +1138,272 @@ function resetChildExpirationTime(workInProgress) {
   workInProgress.childExpirationTime = newChildExpirationTime
 }
 /* ---------更新任务队列相关 */
+
+/* ---------commit相关方法 */
+function commitBeforeMutationLifecycles() {
+  // 这是commit阶段的第一个循环
+  // 这个commitBeforeMutationLifeCycles方法主要就是
+  // 判断current如果存在并且是classComponent同时有Snapshot这个生命周期
+  // 就获取到它的memoizedProps和memoizedState
+  // 然后把这俩作为prevProps和prevState传进这个组件的getSnapshotBeforeUpdate
+  // 可以获得一个快照 也就是 snapshot
+  // 再然后把这个snapshot快照放在这个实例上
+  // instance.__reactInternalSnapshotBeforeUpdate = snapshot
+  while (!!nextEffect) {
+    let effectTag = nextEffect.effectTag
+    if (effectTag & Snapshot) {
+      let finishedWork = nextEffect
+      let tag = finishedWork.tag
+      if (tag === ClassComponent) {
+        // 只有当本fiber的tag是class组件的时候才执行逻辑
+        // 因为只有class组件才能写这种周期
+        let current = finishedWork.alternate
+        if (!!current) {
+          // 如果有current的话才执行
+          // 因为这个getSnapshotBeforeUpdate是用作更新前的快照
+          // 初次渲染是 组件都是不会有current的 只有当组件要更新时才会产生current
+     
+          // 获取组件实例
+          let instance = finishedWork.stateNode
+          // 现在current上获取更新前的props和state
+          let prevProps = Object.assign({}, finishedWork.type.defaultProps, current.memoizedProps)
+          let prevState = Object.assign({}, current.memoizedState)
+          let snapshot = instance.getSnapshotBeforeUpdate(prevProps, prevState)
+
+          // 最后执行完给组件添加上这个老特么长的属性作为快照
+          // 这个snapshot会在更新完成之后传递给componentDidUpdate
+          // 这个快照周期 比较适合用来获取更新前的状态 比如更新前的dom信息之类的
+          instance.__reactInternalSnapshotBeforeUpdate = snapshot
+        }
+      }
+    }
+    nextEffect = nextEffect.nextEffect
+  }
+}
+
+function commitAllHostEffects() {
+  while (!!nextEffect) {
+    let effectTag = nextEffect.effectTag
+    // 如果有ContentReset的话
+    // 说明有文本节点需要重置内容
+    // if (effectTag & ContentReset) {
+    //   // 主要作用就是判断当前这个实例的子节点
+    //   // 是否只有一个文本节点 如果是的话就把它置为 '' 空字符串
+    //   commitResetTextContent(nextEffect);
+    // }
+
+    // 对于dom节点来讲主要需要执行的就是 Placement(新插入) Update(更新) Deletion(删除)
+    // effectTag & (Placement | Update | Deletion) 意思就是
+    // 等于括号里那几个中的某一个或某几个或没有 (xx | yy | zz) 就是获取这仨的集合
+    let primaryEffectTag = effectTag & (Placement | Update | Deletion)
+    if (primaryEffectTag === Placement) {
+      // 进入这里说明只是一个新增的节点
+
+      commitPlacement(nextEffect)
+      // 这一步的 &= ~ 意思就是把Placement这个标志从effectTag中干掉
+      nextEffect.effectTag &= ~Placement
+
+    } else if (primaryEffectTag === PlacementAndUpdate) {
+      // 进入这里说明又是新增又有修改
+      // 或者可以理解成原来存在但是跟兄弟节点进行了位置的互换
+      // 先调用Placement
+    } else if (primaryEffectTag === Update) {
+      // 进入这里表示更新
+    } else if (primaryEffectTag === Deletion) {
+      // 走到这儿表示删除
+    }
+    nextEffect = nextEffect.nextEffect
+  }
+}
+
+function commitPlacement(finishedWork) {
+  // 先找到当前节点最近的父节点 这个节点一定是个HostComponent或HostRoot
+  // 因为只有这两种才有对应的真实dom (其实还一种portal类型 暂且不论)
+  let parentFiber = finishedWork.return
+  while (!!parentFiber) {
+    let tag = parentFiber.tag
+    if (tag === HostComponent || tag === HostRoot) {
+      break
+    }
+    parentFiber = parentFiber.return
+  }
+
+  let isContainer = null // 表示是否要挂载在根节点上
+  let parent = null // 表示parentFiber对应的实例
+  let parentTag = parentFiber.tag
+  if (parentTag === HostComponent) {
+    parent = parentFiber.stateNode
+    isContainer = false
+  } else {
+    parent = parentFiber.stateNode.containerInfo
+    isContainer = true
+  }
+
+  // 如果这个parent也需要重置文字内容
+  // 那就要先执行resetTextContent给它做掉
+  // 然后把这个ContentReset给去掉
+  // if (parentFiber.effectTag & ContentReset) {}
+
+  // 这个方法比较重要
+  // 里头用了一个语法是:
+  /*
+    ding: while (xxx) {
+      while (yyy) {
+        // ...
+        break ding
+      }
+      while (zzz) {
+        continue ding
+      }
+    }
+    这个语法的意思就是当while循环有嵌套的时候
+    在内部的循环如果想直接break或continue的话
+    只是单纯的跳出或者打断自己这个内部循环
+    但是跳出外部的循环的话就可以通过这种语法直接跳出
+  */
+
+  // 找到一个节点before 要把新的节点插在这个before前面
+  let before = getHostSibling(finishedWork)
+  debugger
+  let node = finishedWork
+  while (true) {
+    let childTag = node.tag
+    // 判断这个node是否是真实的dom节点或者text节点
+    // 因为只有这两种节点才能被插入进dom
+    if (childTag === HostComponent || childTag === HostText) {
+      if (!!before) {
+        // 如果有before说明找到了一个合适的真实兄弟dom
+        // 那么就把它插在它前面
+        parent.insertBefore(node.stateNode, before)
+      } else {
+        // 对于没有找到before的情况
+        // 只能通过appendChlid去根据父元素
+        // 把节点插入到父元素的最后一位了
+        parent.appendChild(node.stateNode)
+      }
+    } else if (!!node.child) {
+      // 如果当前这个需要Placement的节点
+      // 是个classComponent之类的话
+      // 就往下找 去找它的child
+      // 它的child节点当中如果有节点需要插入的话 就重新执行对应的方法
+      node.child.return = node
+      node = node.child
+      continue
+    }
+    if (node === finishedWork) {
+      // 进入这里说明已经把子树都搞完了
+      return
+    }
+    while (node.sibling === null) {
+      if (node.return === null || node.return === finishedWork) {
+        return
+      }
+      node = node.return
+    }
+    // 由于classComponent可能返回数组
+    // 也就是说当前节点有兄弟节点
+    // 它的兄弟节点也是需要插入到刚才那个before之前的
+    // 所以要让当前节点node指向兄弟节点进行下一轮插入操作
+    node.sibling.return = node.return
+    node = node.sibling
+  }
+}
+
+function getHostSibling(fiber) {
+  // 这个函数的逻辑 就是要找到一个真实dom节点
+  // 好让当前这个Placement节点能插在它前头
+
+  let node = fiber
+  siblings: while (true) {
+    // 这个循环的作用就是找到当前节点的右边的兄弟节点
+    // 如果当前这个节点没有的话就一直往上找
+    // 直到找到一个有兄弟节点的组件
+    // 注意 只有父节点全是class类型或者function类型的才能继续往上找
+    // 一旦当找到了第一个原生dom节点 而还没有找到一个有兄弟节点的东西
+    // 就说明它真的只是个单一节点 就可以退出返回null了
+    while (node.sibling === null) {
+      let returnFiber = node.return
+      let tag = returnFiber.tag
+      if (returnFiber === null || tag === HostComponent || tag === HostRoot) {
+        // 走到这儿就说明他是一个单一节点
+        // 当找到RootFiber了或者它真的就是一个单一节点的话
+        // 那就没必要再找了 直接return一个null
+
+        return null
+      }
+      node = node.return
+    }
+
+    // 这是当找到自己本身或者它的父节点(这个父节点一定不能是原生dom类型的)的兄弟节点的时候
+    // 让这个节点(一定是个class或者function之类的组件类型的节点)的兄弟节点的return指向该节点的return
+    // 然后让兄弟节点作为兄弟节点
+    // 此时这个兄弟节点可能是个组件类型的也可能是个原生dom类型的
+    node.sibling.return = node.return
+    node = node.sibling
+    // 如果这个找到的兄弟节点直接就是原生dom类型的
+    // 那么就可以直接把它作为要返回值 等待前面被这个新节点插入了
+    // 但是如果它要是个组件类型的节点的话
+    // 需要判断这个节点是否也是一个要新插入的节点
+    // 如果是的话直接跳过 用这个节点作为下一轮的循环再找这个节点的兄弟节点
+    // 如果不是需要新插入的 就说明这个组件类型的节点在之前就已经存在了
+    // 所以需要判断它是否有真实的child的dom节点并且不能是portal(portal要被插入到fiber树之外)
+    // 如果这个组件类型的节点自己就有子节点 那么这个子节点就要作为before被返回 以便新节点插在它前头
+    // 如果这个组件没有子节点的话 那么就得把这个组件节点放到下一轮进行循环
+    while (node.tag !== HostComponent && node.tag !== HostText) {
+      if (node.effectTag & Placement) {
+        continue siblings;
+      }
+      if (node.child === null || node.tag === HostPortal) {
+        continue siblings;
+      } else {
+        node.child.return = node;
+        node = node.child;
+      }
+    }
+
+    /*
+      像下面这种fiber结构
+      <div id="-1">
+        <div id="0">
+          <Ding1>
+            <Ding2>
+              <Ding3>
+                <div id="1"></div>
+              </Ding3>
+            </Ding2>
+            <Ding4></Ding4>
+            <Ding5>
+              <div id="2"></div>
+            </Ding5>
+          </Ding1>
+        </div>
+      </div>
+      虽然在fiber树的结构上来讲
+      id1和id2不是兄弟节点
+      但是最终渲染出来的真实dom树 这俩却有可能是兄弟节点
+      所以上面那俩循环的主要目的
+      当想把id1插入到id0中 其实是要把id1插入到id2之前 通过insertBefore
+      所以要遍历id1是否有兄弟节点
+      没有的话往上找到Ding3发现它也没有兄弟节点
+      然后再往上找 找到Ding2 发现Ding2有兄弟节点是Ding4
+      但是Ding4没有子节点 所以只能把Ding4作为下一轮要循环的对象
+      然后下一轮中找到了Ding4的兄弟节点是Ding5
+      正巧又发现Ding5有子节点 这个子节点就是id2
+      同时这个id2并不是一个Placement也就是它是一个旧有的已经存在于dom树上的节点
+      所以可以使用这个id2作为before
+      然后新的Placement的dom节点就可以插在它前面了~
+
+      注意!假设Ding5下没有id2的话就会一直往上找找到id0
+      这个时候就不用再找了 说明在这个dom树中
+      这个id1节点就是独一个的存在
+      直接返回null
+    */
+    if (!(node.effectTag & Placement)) {
+      return node.stateNode
+    }
+  }
+}
+/* ---------commit相关方法 */
 
 
 /* ---------根据类型更新fiber相关 */
@@ -1217,6 +1675,23 @@ function processUpdateQueue(workInProgress, instance) {
     } else {
       // 初次渲染时候返回的是{element} 之后更新时候才返回state
       resultState = getStateFromUpdate(workInProgress, queue, update, instance)
+      let _callback = update.callback
+      if (!!_callback) {
+        // 在更新RootFiber时肯定会有一个callback
+        // 因为在最初执行render的时候 new 了一个 ReactWork
+        // 这个回调就是 work._onCommit 执行这个 _onCommit 就可以触发ReactDOM.render的第三个参数
+        workInProgress.effectTag |= Callback // 0b000000100000 也就是32
+        
+        // 下面这块源码中有 注释是在中断渲染时防止它变异
+        // 啧啧 暂时不是很理解 回头再研究吧 反正肯定不是啥有大影响的东西 做掉几行也无所谓
+        // update.nextEffect = null
+        // if (queue.lastEffect === null) {
+        //   queue.firstEffect = queue.lastEffect = update
+        // } else {
+        //   queue.lastEffect.nextEffect = update
+        //   queue.lastEffect = update
+        // }
+      }
     }
     update = update.next
   }
@@ -1562,7 +2037,10 @@ function legacyRenderSubtreeIntoContainer(parentComponent, children, container, 
     // 第二个参数是 isConcurrent 表示是否是异步渲染
     // 初次渲染肯定是false
     // react源码中还要传个是否是服务端渲染
-    root = container._reactRootContainer = new ReactRoot(container, false)
+    // 这个isConcurrent表示不使用异步渲染
+    // 因为初次渲染时是一定要同步更新的 所以这里要默认状态是false
+    let isConcurrent = false
+    root = container._reactRootContainer = new ReactRoot(container, isConcurrent)
 
     // 这里要检查callback
     // ...
@@ -1625,6 +2103,8 @@ class ReactRoot {
   createHostRootFiber = (isConcurrent) => {
     // 第一次渲染肯定是false
     // 第一次的mode肯定是同步模式
+    // react源码中可能初次会是 4 因为有个enableProfilerTimer
+    // 这个好像是给devTools用的 所以不用管
     let mode = isConcurrent ? ConcurrentMode : NoContext
     // 第二个参数是要传入的属性props
     // 第三个参数是key
@@ -1635,7 +2115,7 @@ class ReactRoot {
     let current = container.current // current就是RootFiber
     let currentTime = requestCurrentTime() // 这里得到的是到目前为止 react还能处理多少单位时间(1单位时间是10ms)
     let expirationTime = computeExpirationForFiber(currentTime, current)
-    console.log(expirationTime)
+    // console.log(expirationTime)
     // updateContainerAtExpirationTime(element, container, parentComponent, expirationTime, callback)
     this.scheduleRootUpdate(current, element, expirationTime, callback)
   }
@@ -1657,10 +2137,13 @@ class ReactRoot {
   }
 
   render(children, callback) {
-    console.log(children)
+    // console.log(children)
     let root = this._internalRoot
+    let work = new ReactWork()
+    if (!!callback) work.then(callback)
+
     // 第三个参数表示parentComponent
-    this.updateContainer(children, root, null, callback)
+    this.updateContainer(children, root, null, work._onCommit)
   }
 
   unmount = (callback) => {}
@@ -1668,6 +2151,26 @@ class ReactRoot {
   legacy_renderSubtreeIntoContainer = () => {}
 
   createBatch = () => {}
+}
+
+class ReactWork {
+  _callbacks = []
+  _didCommit = false
+  _onCommit = this._onCommit.bind(this)
+  then(callback) {
+    if (typeof callback === 'function') {
+      this._callbacks.push(callback)
+    }
+  }
+  _onCommit() {
+    if (this._didCommit) return
+    this._didCommit = true
+    if (this._callbacks.length > 0) {
+      this._callbacks.forEach((item) => {
+        item()
+      })
+    }
+  }
 }
 /* ---------初次渲染相关 */
 

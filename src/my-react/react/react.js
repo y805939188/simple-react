@@ -2,7 +2,7 @@
 const REACT_ELEMENT_TYPE = Symbol.for('react.element')
 
 function ReactElement(type, key, props) {
-  console.log(type, key, props)
+  // console.log(type, key, props)
   let element = {
     $$typeof: REACT_ELEMENT_TYPE,
     type: type,

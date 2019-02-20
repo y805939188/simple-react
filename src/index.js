@@ -44,11 +44,31 @@ import ReactDOM from './my-react/react-dom/react-dom'
 //   }
 // }
 
-function Ding(props) {
-  return <div>
-    <h1 style={{color: 'red'}}>{props.ding1}</h1>
-    <h2>{props.ding2}</h2>
-  </div>
+// function Ding(props) {
+//   return <div>
+//     <h1 style={{color: 'red'}}>{props.ding1}</h1>
+//     <h2>{props.ding2}</h2>
+//   </div>
+// }
+
+class Ding2 extends React.Component {
+  render() {
+    return (
+      <span>6666</span>
+    )
+  }
+}
+
+class Ding extends React.Component {
+  render() {
+    return (
+      <div>
+        <h2>niubi</h2>
+        <h3>zheshih3</h3>
+        <Ding2></Ding2>
+      </div>
+    )
+  }
 }
 ReactDOM.render(
   // <div id="ding-ge">9999</div>,
