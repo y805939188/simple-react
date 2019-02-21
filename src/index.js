@@ -54,7 +54,7 @@ import ReactDOM from './my-react/react-dom/react-dom'
 class Ding2 extends React.Component {
   render() {
     return (
-      <span>6666</span>
+      <span>{this.props.ding2}</span>
     )
   }
 }
@@ -70,9 +70,15 @@ class Ding extends React.Component {
     )
   }
 }
+
+function Ding3(props) {
+  return (
+    <h1>{props.ding1}</h1>
+  )
+}
 ReactDOM.render(
   // <div id="ding-ge">9999</div>,
   // <Ding myProp={'dinggewudi'}>dddddd</Ding>,
-  <Ding ding1="666" ding2="999"></Ding>,
+  <Ding3 ding1="666" ding2="999"></Ding3>,
   document.querySelector('#app')
 )

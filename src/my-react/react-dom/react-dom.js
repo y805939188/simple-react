@@ -1037,7 +1037,9 @@ function commitRoot(root, finishedWork) {
 
   // let updateExpirationTimeBeforeCommit = finishedWork.expirationTime
   // let childExpirationTimeBeforeCommit = finishedWork.childExpirationTime
-  // let earliestRemainingTimeBeforeCommit = childExpirationTimeBeforeCommit > updateExpirationTimeBeforeCommit ? childExpirationTimeBeforeCommit : updateExpirationTimeBeforeCommit
+  // let earliestRemainingTimeBeforeCommit = 
+  //   childExpirationTimeBeforeCommit > updateExpirationTimeBeforeCommit ?
+  //   childExpirationTimeBeforeCommit : updateExpirationTimeBeforeCommit
   // markCommittedPriorityLevels(root, earliestRemainingTimeBeforeCommit)
 
   let firstEffect = null
@@ -1067,6 +1069,7 @@ function commitRoot(root, finishedWork) {
       commitBeforeMutationLifecycles()
     } catch (err) {
       console.log(err)
+      break
     }
   }
 
@@ -1080,10 +1083,48 @@ function commitRoot(root, finishedWork) {
       commitAllHostEffects()
     } catch (err) {
       console.log(err)
+      break
     }
   }
 
+  // 因为到这里为止 fiber的更新以及渲染都已经完成了
+  // 所以要把保存着现在状态的finishedWork作为root的current
+  // 以便用来下次setState的时候和每个fiber的新的workInProgress作对比
+  root.current = finishedWork
 
+  // 这第三个循环主要就是调用跟组件或者其他的各种各样的生命周期相关的方法
+  nextEffect = firstEffect
+  while (!!nextEffect) {
+    try {
+      commitAllLifeCycles(root, committedExpirationTime)
+    } catch (err) {
+      console.log(err)
+      break
+    }
+  }
+
+  isWorking = false
+  isCommitting = false
+
+  // 这里要把一些expirationTime再做一下判断
+  // 因为在执行那些生命周期方法的时候 可能又会产生新的更新
+  // 这样childExpirationTime可能会发生变化
+  let updateExpirationTimeAfterCommit = finishedWork.expirationTime
+  let childExpirationTimeAfterCommit = finishedWork.childExpirationTime
+
+  // 下面这个判断的主要作用就是选出优先级相对大的那个expirationTime
+  // 然后这个会作为root上的新的expirationTime
+  let earliestRemainingTimeAfterCommit =
+    childExpirationTimeAfterCommit > updateExpirationTimeAfterCommit
+      ? childExpirationTimeAfterCommit
+      : updateExpirationTimeAfterCommit
+
+  // 当设置完这root的expirationTime之后会退出这里回到外部的while循环
+  // 那个循环中又会去找到下一个优先级高的root 然后重新开始调度root
+  // 比如在执行声明周期的时候 某个又执行了一下setState 那么会产生新的expirationTime
+  // 那么就要继续调度fiber 继续更新
+  root.expirationTime = earliestRemainingTimeAfterCommit
+  root.finishedWork = null
 }
      
 function requestWork(root, expirationTime) {
@@ -1215,6 +1256,7 @@ function commitAllHostEffects() {
     nextEffect = nextEffect.nextEffect
   }
 }
+
 
 function commitPlacement(finishedWork) {
   // 先找到当前节点最近的父节点 这个节点一定是个HostComponent或HostRoot
@@ -1401,6 +1443,59 @@ function getHostSibling(fiber) {
     if (!(node.effectTag & Placement)) {
       return node.stateNode
     }
+  }
+}
+
+
+function commitAllLifeCycles(finishedRoot, committedExpirationTime) {
+  while (!!nextEffect) {
+    let effectTag = nextEffect.effectTag
+    if (effectTag & (Update | Callback)) {
+      // 进入这里就是说如果当前这个fiber上有Update或者Callback的标志的话
+      // 当在挂载或者更新ClassComponent时 如果组件上有什么ComponentDidUpdate之类的周期
+      // 那么就会给该组件上 '|=' 一个Update 也就是挂上Update的标识
+      let tag = nextEffect.tag
+      let instance = nextEffect.stateNode
+      let current = nextEffect.alternate
+      if (tag === ClassComponent) {
+        // 如果当前这个nextEffect的tag是class类型的组件的话
+        // 就得好好处理 执行执行周期了
+        if (effectTag & Update) {
+          // 如果当前fiber上的标志挂的是Update的话
+          if (!!current) {
+            // 并且如果它有current的话 说明这个fiber是第一次渲染
+            // 这个时候要执行didMount
+            instance.componentDidMount()
+          } else {
+            // 进到这儿说明是执行setState了
+            // 那就要执行didUpdate
+            let prevProps = current.memoizedProps
+            let prevState = current.memoizedState
+            // 传参的时候要记着多传一个snapshot的快照
+            instance.componentDidUpdate(prevProps, prevState, instance.__reactInternalSnapshotBeforeUpdate)
+          }
+        }
+
+        // 这里要获取到updateQueue 因为有的setState可能传了回调函数
+        // 这里就是遍历链表 把setState传进来的回调都给执行咯
+        let updateQueue = nextEffect.updateQueue
+        if (!!updateQueue) {
+          let effect = updateQueue.firstEffect
+          while (!!effect) {
+            let callback = effect.callback
+            if (!!callback) {
+              effect.callback = null
+              callback.apply(instance)
+            }
+            effect = effect.nextEffect
+          }
+        }
+      }
+      else if (tag === HostComponent) {}
+      else if (tag === HostRoot) {}
+      return
+    }
+    nextEffect = nextEffect.nextEffect
   }
 }
 /* ---------commit相关方法 */
