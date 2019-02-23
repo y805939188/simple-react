@@ -432,7 +432,6 @@ function performWorkOnRoot(root, expirationTime, isYield) {
     completeRoot(root, finishedWork, expirationTime)
   } else {
     renderRoot(root, isYield)
-    debugger
     if (!!root.finishedWork) {
       if ( !isYield || (isYield && shouldYieldToRenderer()) ) {
         // 在renderRoot中会给root挂上最终生成的这个finishedWork 也就是fiber树
@@ -482,11 +481,8 @@ function renderRoot(root, isYield) {
   }
 
   // 这个workLoop就是要不停(或有停止)地递归生成fiber树
-  // debugger
   workLoop(isYield)
-  // debugger
   root.finishedWork = root.current.alternate
-  // debugger
 
 
   // 在初次渲染时 肯定会给RootFiber一个current
@@ -608,7 +604,6 @@ function workLoop(isYield) {
   if (!isYield) {
     // 如果不能暂停的话就一路solo下去
     while (!!nextUnitOfWork) {
-      // debugger
       // 每个节点或者说每个react元素都是一个unit
       // 不管是真实dom节点还是class类或是函数节点
       nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
@@ -636,14 +631,12 @@ function performUnitOfWork(workInProgress) {
     // 然后在completeUnitOfWork中找到兄弟节点作为next进行兄弟节点上的fiber的创建
     // 如果都到这里了 这next还是返回null 就说明这个root下的节点们都已经完成了fiber
     // 就可以进行下一步的commit了
-    // debugger
     next = completeUnitOfWork(workInProgress)
-  }
+  } 
   return next
 }
 
 function beginWork(workInProgress) {
-  // debugger
   let next = null
   let tag = workInProgress.tag
 
@@ -672,7 +665,6 @@ function beginWork(workInProgress) {
     // 根据函数的返回值 会在这个方法中确定workInProgress的tag类型
     next = mountIndeterminateComponent(workInProgress)
   } else if (tag === HostRoot) {
-    // debugger
     next = updateHostRoot(workInProgress)
   } else if (tag === FunctionComponent) {
 
@@ -719,7 +711,6 @@ function completeUnitOfWork(workInProgress) {
      当对img的第一个p执行完了beginWork 由于它没有子节点 所以 next = beginWork返回的next是null
      这就是完成了一侧 这个时候就要进入这个completeUnitOfWork中
   */
-//  debugger
   while(true) {
     let current = workInProgress.alternate
     let returnFiber = workInProgress.return
@@ -810,12 +801,7 @@ function completeUnitOfWork(workInProgress) {
       // 那么执行 effectTag & Placement 会返回一个非0的数
       // 反之如果effectTag没有Placement之类的标志 那么就会返回0
 
-      let workInProgressHasEffect =
-        !!(effectTag & Placement) || // 插入或者放置
-        !!(effectTag & Update) || // 更新
-        !!(effectTag & PlacementAndUpdate) || // 这个可能是元素换位置了
-        !!(effectTag & Deletion) || // 这个是删除
-        !!(effectTag & ContentReset) // 这个是更新了文本
+      let workInProgressHasEffect = effectTag & (Placement | Update | PlacementAndUpdate | Deletion | ContentReset)
       // 然后就要把当前节点的父节点的last和firsteffect更新为当前节点
       if (workInProgressHasEffect) {
         if (!!returnFiber.lastEffect) {
@@ -855,11 +841,16 @@ function completeWork(workInProgress) {
     let instance = workInProgress.stateNode
     let type = workInProgress.type
     let props = workInProgress.pendingProps
+    // console.log(type)
+    // console.log(instance)
+    // console.log(props)
+    // console.log('-----------------------')
     if (!instance) {
       instance = createInstance(type, props, workInProgress)
       appendAllChildren(instance, workInProgress)
       // 这里会对该元素进行一堆事件的初始化
       // 把事件绑定到document上
+      // console.log(type)
       finalizeInitialChildren(instance, type, props)
       workInProgress.stateNode = instance
     }
@@ -887,7 +878,6 @@ function createInstance(type, props, workInProgress) {
 }
 
 function appendAllChildren(parentInstance, workInProgress) {
-  debugger
   // 如果它有child的话
   // 也就是说fiber树的叶子节点不会走这个while循环
   // 该函数主要就是把原生dom的子节点都添加到当前parent下
@@ -899,12 +889,24 @@ function appendAllChildren(parentInstance, workInProgress) {
   //     Ding 组件类型 有child 走下面的循环
   //       h3 没有 child不走这里 但是会直接把h3放在h2的后面
   let node = workInProgress.child
+  // debugger
+  // if (!node) {
+  //   let children = workInProgress.pendingProps.children
+  //   if (children && (typeof children === 'number' || typeof children === 'string')) {
+  //     node = children
+  //   }
+  // }
   while (!!node) {
     let tag = node.tag
     if (tag === HostComponent || tag === HostText) {
       // 如果这个tag就是原生dom节点或者文本类型的话
       // 那就把这个child的实例直接append到parent下
-      parentInstance.appendChild(node.stateNode)
+      if (tag === HostText) {
+        // console.log(node)
+        parentInstance.appendChild(document.createTextNode(node.pendingProps))
+      } else {
+        parentInstance.appendChild(node.stateNode)
+      }
     } else if (!!node.child) {
       // 进入这里说明这个child可能是个class组件或者函数组件之类的非原生节点类型
       // 那么就把node置为它的第一个child 然后重新执行循环
@@ -952,8 +954,25 @@ function appendAllChildren(parentInstance, workInProgress) {
   }
 }
 
+
+let temp_events_obj = {
+  onClick: {},
+  onChange: {},
+  onBlur: {},
+  onFocus: {},
+  onInput: {},
+  onKeyDown: {},
+  onKeyUp: {},
+  onTouchEnd: {},
+  onTouchStart: {},
+  onTouchCancel: {},
+  // 等等...
+}
+
+let RootContainerHasAddedEvents = {}
+
+
 function finalizeInitialChildren(instance, type, props) {
-  // debugger
   for (let propKey in props) {
     // 这一步是确保排除原型链上的
     if (!props.hasOwnProperty(propKey)) continue
@@ -969,6 +988,115 @@ function finalizeInitialChildren(instance, type, props) {
     } else if (propKey === 'children') {
       if (typeof prop === 'string') {
         instance.textContent = prop
+      }
+      if (typeof prop === 'number') {
+        instance.textContent = String(prop)
+      }
+    } else if (temp_events_obj.hasOwnProperty(propKey)) {
+      // 进入这里说明props上有个事件相关的
+      let rootContainer = null
+      let RootFiber = instance.__reactInternalInstance
+      while (RootFiber.tag !== HostRoot) {
+        RootFiber = RootFiber.return
+      }
+      rootContainer = RootFiber.stateNode.containerInfo
+      if (!RootContainerHasAddedEvents.hasOwnProperty(propKey)) {
+        RootContainerHasAddedEvents[propKey] = true
+        let eventName = propKey.slice(2).toLowerCase()
+        let eventName2 = ''
+        if (eventName === 'click') {
+          eventName2 = eventName
+        } else if (eventName === 'change') {
+          /*
+            input可能有这么多种类型
+            0: "blur"
+            1: "change"
+            2: "click"
+            3: "focus"
+            4: "input"
+            5: "keydown"
+            6: "keyup"
+            7: "selectionchange"
+          */
+          if (type === 'input' && instance.type === 'text') {
+            eventName2 = 'input'
+          } else if (type === 'input' && instance.type === 'file') {
+            eventName2 = eventName
+          } else if (type === 'select') {
+            eventName2 = eventName
+          } else if (type === 'textare') {
+            eventName2 === 'input'
+          }
+        } else {
+          eventName2 = eventName
+        }
+        if (type === 'input') {
+          rootContainer.addEventListener(eventName2, temp_dispatch_event_fn.bind(null, propKey, false), true)
+        } else {
+          rootContainer.addEventListener(eventName2, temp_dispatch_event_fn.bind(null, propKey, true), false)
+        }
+      }
+    }
+  }
+}
+
+// 我自己瞎鸡儿写的事件代理 react里的和我这个完全不一样
+// react中的事件系统复杂的一比
+// 我就简单实现一下类似的
+function temp_dispatch_event_fn(eventName, isBubble, event) {
+  event = event || window.event
+  let target = event.target || event.srcElement
+  let nextFiber = target.__reactInternalInstance
+  let temp_parent_arr = []
+  let rootContainer = null
+  // debugger
+  while (true) {
+    if (nextFiber.tag === HostRoot) {
+      rootContainer = nextFiber.stateNode.containerInfo
+      break
+    }
+    if (nextFiber.tag === HostComponent || nextFiber.tag === HostText) {
+      let props = nextFiber.pendingProps
+      if (props.hasOwnProperty(eventName)) {
+        temp_parent_arr.push(props[eventName])
+      }
+    }
+    nextFiber = nextFiber.return
+  }
+
+
+  let len = temp_parent_arr.length
+  let _event = {
+    nativeEvent: event
+  }
+  Object.defineProperty(_event, 'target', {
+    get() {
+      return _event.nativeEvent.target
+    }
+  })
+
+  if (isBubble) {
+    let shouldStopBubble = false
+    let shouldStopBubbleFn = function () {
+      shouldStopBubble = true
+    }
+    _event.stopBubble = shouldStopBubbleFn
+    for (let i = 0; i < len; i++) {
+      temp_parent_arr[i](_event)
+      if (shouldStopBubble) {
+        break
+      }
+    }
+  } else {
+    let shouldStopCapture = false
+    let shouldStopCaptureFn = function () {
+      shouldStopCapture = true
+    }
+    _event.stopCapture = shouldStopCaptureFn
+    for (let i = len; i > 0; i--) {
+      temp_parent_arr[i - 1](_event)
+      if (shouldStopCapture) {
+        break
       }
     }
   }
@@ -1027,12 +1155,11 @@ function completeRoot(root, finishedWork) {
 }
 
 function commitRoot(root, finishedWork) {
-  // debugger
   // 这俩全局变量表明现在的工作状态
   isWorking = true
   isCommitting = true
 
-  // let committedExpirationTime = root.pendingCommitExpirationTime
+  let committedExpirationTime = root.pendingCommitExpirationTime
   // root.pendingCommitExpirationTime = null
 
   // let updateExpirationTimeBeforeCommit = finishedWork.expirationTime
@@ -1089,7 +1216,9 @@ function commitRoot(root, finishedWork) {
 
   // 因为到这里为止 fiber的更新以及渲染都已经完成了
   // 所以要把保存着现在状态的finishedWork作为root的current
-  // 以便用来下次setState的时候和每个fiber的新的workInProgress作对比
+  // 旧的current继续作为finishedWork的alternate存在
+  // 只不过现在的current变成了本次创建的workInProgress
+  // 等下次setState的时候再创建根据current(本次的workInProgress)创建新的workInProgress
   root.current = finishedWork
 
   // 这第三个循环主要就是调用跟组件或者其他的各种各样的生命周期相关的方法
@@ -1306,7 +1435,6 @@ function commitPlacement(finishedWork) {
 
   // 找到一个节点before 要把新的节点插在这个before前面
   let before = getHostSibling(finishedWork)
-  debugger
   let node = finishedWork
   while (true) {
     let childTag = node.tag
@@ -1493,7 +1621,6 @@ function commitAllLifeCycles(finishedRoot, committedExpirationTime) {
       }
       else if (tag === HostComponent) {}
       else if (tag === HostRoot) {}
-      return
     }
     nextEffect = nextEffect.nextEffect
   }
@@ -1514,7 +1641,6 @@ function updateHostRoot(workInProgress) {
   let prevState = workInProgress.memoizedState
   let prevChildren = prevState !== null ? prevState.element : null
   processUpdateQueue(workInProgress, null)
-  // debugger
   // 这个memoizedState是在上面那个provessUpdateQueue中赋值的
   // 就是从update上把payload拿出来 对于Root节点 它的payload是 {element}
   // 所以这里获取到的nextChildren就是这个element
@@ -1685,9 +1811,9 @@ function updateHostComponent(workInProgress) {
   let nextProps = workInProgress.pendingProps // 获取属性 就是ReactElement方法的第二个参数
   let nextChildren = nextProps.children
   let type = workInProgress.type
-  if (typeof nextChildren === 'string' || typeof nextChildren === 'number') {
-    nextChildren = null
-  }
+  // if (typeof nextChildren === 'string' || typeof nextChildren === 'number') {
+  //   nextChildren = null
+  // }
   // let prevProps = null
   // let current = workInProgress.alternate
   // if (!!current) prevProps = current.memoizedProps
@@ -1859,7 +1985,6 @@ function cloneUpdateQueue(currentQueue) {
 
 // 调和子节点
 function reconcileChildren(workInProgress, newChild) {
-  // debugger
   // 初次渲染时 只有第一个RootFiber有current
   // 其他任何字节点都没有 都走mountChildFibers
   let current = workInProgress.alternate
@@ -1873,7 +1998,6 @@ function reconcileChildren(workInProgress, newChild) {
 }
 
 function reconcileChildFibers(workInProgress, newChild, isMount) {
-  // debugger
   // 在初次渲染阶段 除了RootFiber的workInProgress是有alternate的
   // 剩下它下面的任何子节点在初次渲染时候都没有alternate
   // 因为只有通过createWorkInProgress创建的workInProgress才会有alternate
@@ -1948,7 +2072,6 @@ function reconcileSingleElement(returnFiber, currentFirstChild, element) {
 }
 
 function placeSingleChild(newFiber, isMount) {
-  // debugger
   if (!isMount && !newFiber.alternate) {
     newFiber.effectTag = Placement
   }
@@ -1956,7 +2079,6 @@ function placeSingleChild(newFiber, isMount) {
 }
 
 function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren, isMount) {
-  // debugger
   // react 源码中在处理数组类型的子节点时 用了一堆特别复杂的算法对比key和index等等东西
   // 我这里先不用他那个大算法了 那个确实比较复杂 等回头我再慢慢加上优化
 
@@ -2215,7 +2337,6 @@ class ReactRoot {
     this.scheduleRootUpdate(current, element, expirationTime, callback)
   }
   scheduleRootUpdate = (current, element, expirationTime, callback) => {
-    // debugger
     let update = createUpdate(expirationTime)
     // payload应该是表示要更新的新的状态
     // 不过初次渲染的时候这个payload是根组件
@@ -2274,7 +2395,7 @@ class ReactWork {
 const classComponentUpdater = {
   // isMounted: 
   enqueueSetState(instance, payload, callback) {
-
+    console.log(instance, payload, callback)
   },
   enqueueForceUpdate() {}
 }

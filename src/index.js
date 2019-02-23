@@ -71,10 +71,46 @@ class Ding extends React.Component {
   }
 }
 
-function Ding3(props) {
-  return (
-    <h1>{props.ding1}</h1>
-  )
+class Ding3 extends React.Component {
+  state = {
+    ding: 1
+  }
+  handleClick1 = (event) => {
+    // console.log(event)
+    // console.log('div')
+    // event.stopBubble()
+    // console.log('div')
+  }
+  handleClick2 = (event) => {
+    event.stopBubble()
+    console.log('h1')
+    // console.log('h1')
+  }
+  handleClick3 = (num, event) => {
+    console.log(this.state)
+    // console.log(num, event)
+    // console.log('parent')
+    // this.setState({
+    //   ding: ++this.state.ding
+    // })
+  }
+  handleChange = (e) => {
+    console.log(e.target.value)
+    // console.log(this.setState)
+  }
+  render () {
+    console.log(this.state.ding)
+    let ding = this.state.ding
+    return (
+      <div onClick={this.handleClick3.bind(this, 222)}>
+        clickme {this.state.ding}
+        {/* 8888899 */}
+        {/* <input type="text" onKeyDown={this.handleChange}/> */}
+        {/* <h1 onClick={this.handleClick2}>{this.props.ding1}</h1> */}
+        {/* <button onClick={this.handleClick1}handleClick1>点我</button> */}
+      </div>
+    )
+  }
 }
 ReactDOM.render(
   // <div id="ding-ge">9999</div>,

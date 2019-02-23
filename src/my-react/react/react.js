@@ -25,14 +25,35 @@ function createElement(type, props = {}, children) {
   return ReactElement(type, _key, _props)
 }
 
-function Component(props, context, updater) {
-  this.props = props
-  this.context = context
-  // this.refs = emptyObject
+// function Component(props, context, updater) {
+//   this.props = props
+//   this.context = context
+//   // this.refs = emptyObject
 
-  this.updater = updater || null
+//   this.updater = updater || null
+// }
+// Component.prototype.isReactComponent = true
+
+class Component {
+  constructor(props, context, updater) {
+    this.props = props
+    this.context = context
+    this.updater = updater || null
+  }
+  get isReactComponent() {
+    return true
+  }
+  setState(partialState, callback) {
+    if (partialState instanceof Object || typeof partialState === 'function') {
+      let _setState = this.updater.enqueueSetState
+      _setState && _setState(this, partialState, callback, 'setState')
+    }
+  }
+  forceUpdate(callback) {
+    let _forceUpdate = this.updater.enqueueSetState
+    _forceUpdate && _forceUpdate(this, callback, 'forceUpdate')
+  }
 }
-Component.prototype.isReactComponent = true
 
 const React = {
   createElement: function(type, props, ...children) {
