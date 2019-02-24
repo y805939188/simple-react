@@ -82,7 +82,7 @@ function requestCurrentTime() {
     // msToExpirationTime的语义就是把js在32位系统下支持的最大数字1073741823作为react可以处理的最大单元数
     // 一个单元数react定义为10ms 然后用到目前为止已经花费的时间除以10ms 计算出但目前为止已经消耗了多少单元可用的时间
     // 然后用1073741823减去这老些单元 就可以得出react还能够处理多少单元的东西
-    currentSchedulerTime = currentRendererTime =msToExpirationTime(performance.now() - originalStartTimeMs)
+    currentSchedulerTime = currentRendererTime = msToExpirationTime(performance.now() - originalStartTimeMs)
   }
   return currentSchedulerTime
 }
@@ -301,7 +301,7 @@ function enqueueUpdate(current, update) {
   if (queue2 === null || queue1 === queue2) {
     appendUpdateToQueue(queue1, update)
   } else {
-
+    
   }
 }
 /* ---------更新任务队列相关 */
@@ -410,11 +410,15 @@ function performWork(minExpirationTime, isYield) {
     //   minExpirationTime <= nextFlushedExpirationTime
     // ) {
       performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, false)
+      nextFlushedExpirationTime = NoWork
+      nextFlushedRoot = null
       // findHighestPriorityRoot()
     // }
   } else {
     // while (nextFlushedRoot !== null && nextFlushedExpirationTime !== NoWork && minExpirationTime <= nextFlushedExpirationTime && !(didYield && currentRendererTime > nextFlushedExpirationTime)) {
       performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, currentRendererTime > nextFlushedExpirationTime);
+      nextFlushedExpirationTime = NoWork
+      nextFlushedRoot = null
       // findHighestPriorityRoot()
       // recomputeCurrentRendererTime()
     // }
@@ -1031,9 +1035,9 @@ function finalizeInitialChildren(instance, type, props) {
           eventName2 = eventName
         }
         if (type === 'input') {
-          rootContainer.addEventListener(eventName2, temp_dispatch_event_fn.bind(null, propKey, false), true)
+          rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn2, propKey), false)
         } else {
-          rootContainer.addEventListener(eventName2, temp_dispatch_event_fn.bind(null, propKey, true), false)
+          rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn1, propKey), false)
         }
       }
     }
@@ -1043,7 +1047,7 @@ function finalizeInitialChildren(instance, type, props) {
 // 我自己瞎鸡儿写的事件代理 react里的和我这个完全不一样
 // react中的事件系统复杂的一比
 // 我就简单实现一下类似的
-function temp_dispatch_event_fn(eventName, isBubble, event) {
+function temp_dispatch_event_fn1(eventName, event) {
   event = event || window.event
   let target = event.target || event.srcElement
   let nextFiber = target.__reactInternalInstance
@@ -1064,6 +1068,48 @@ function temp_dispatch_event_fn(eventName, isBubble, event) {
     nextFiber = nextFiber.return
   }
 
+  let len = temp_parent_arr.length
+  let _event = {
+    nativeEvent: event
+  }
+  Object.defineProperty(_event, 'target', {
+    get() {
+      return _event.nativeEvent.target
+    }
+  })
+  let shouldStopBubble = false
+  let shouldStopBubbleFn = function () {
+    shouldStopBubble = true
+  }
+  _event.stopBubble = shouldStopBubbleFn
+  for (let i = 0; i < len; i++) {
+    temp_parent_arr[i](_event)
+    if (shouldStopBubble) {
+      break
+    }
+  }
+}
+
+function temp_dispatch_event_fn2(eventName, isBubble, event) {
+  event = event || window.event
+  let target = event.target || event.srcElement
+  let nextFiber = target.__reactInternalInstance
+  let temp_parent_arr = []
+  let rootContainer = null
+  // debugger
+  while (true) {
+    if (nextFiber.tag === HostRoot) {
+      rootContainer = nextFiber.stateNode.containerInfo
+      break
+    }
+    if (nextFiber.tag === HostComponent || nextFiber.tag === HostText) {
+      let props = nextFiber.pendingProps
+      if (props.hasOwnProperty(eventName)) {
+        temp_parent_arr.push(props[eventName])
+      }
+    }
+    nextFiber = nextFiber.return
+  }
 
   let len = temp_parent_arr.length
   let _event = {
@@ -1074,30 +1120,38 @@ function temp_dispatch_event_fn(eventName, isBubble, event) {
       return _event.nativeEvent.target
     }
   })
+  let shouldStopCapture = false
+  let shouldStopCaptureFn = function () {
+    shouldStopCapture = true
+  }
+  _event.stopCapture = shouldStopCaptureFn
+  for (let i = len; i > 0; i--) {
+    temp_parent_arr[i - 1](_event)
+    if (shouldStopCapture) {
+      break
+    }
+  }
+}
 
-  if (isBubble) {
-    let shouldStopBubble = false
-    let shouldStopBubbleFn = function () {
-      shouldStopBubble = true
-    }
-    _event.stopBubble = shouldStopBubbleFn
-    for (let i = 0; i < len; i++) {
-      temp_parent_arr[i](_event)
-      if (shouldStopBubble) {
-        break
-      }
-    }
-  } else {
-    let shouldStopCapture = false
-    let shouldStopCaptureFn = function () {
-      shouldStopCapture = true
-    }
-    _event.stopCapture = shouldStopCaptureFn
-    for (let i = len; i > 0; i--) {
-      temp_parent_arr[i - 1](_event)
-      if (shouldStopCapture) {
-        break
-      }
+function interactiveUpdates(fn, eventName, event) {
+  // isBatchingInteractiveUpdates 初始是false
+  // 只有在这个函数中才会改变isBatchingInteractiveUpdates
+  if (isBatchingInteractiveUpdates) {
+    return fn(eventName, event)
+  }
+  // 记录下当前的isBatchingInteractiveUpdates和isBatchingUpdates的值
+  let previousIsBatchingInteractiveUpdates = isBatchingInteractiveUpdates
+  let previousIsBatchingUpdates = isBatchingUpdates
+  // 都置为true 用来在后面执行setState时候先不render和commit
+  isBatchingInteractiveUpdates = true
+  isBatchingUpdates = true
+  try {
+    return fn(eventName, event)
+  } finally {
+    isBatchingInteractiveUpdates = previousIsBatchingInteractiveUpdates
+    isBatchingUpdates = previousIsBatchingUpdates
+    if (!isBatchingUpdates && !isRendering) {
+      performSyncWork()
     }
   }
 }
@@ -2395,7 +2449,218 @@ class ReactWork {
 const classComponentUpdater = {
   // isMounted: 
   enqueueSetState(instance, payload, callback) {
-    console.log(instance, payload, callback)
+    console.log(instance)
+    console.log(payload)
+    console.log(callback)
+    debugger
+
+    /*
+      <Ding>
+        <button></button>
+        ...
+      </Ding>
+
+    |----------------------------------------------------------------------
+    |
+    |                   第一次commit前
+    |           
+    |           Root
+    |             ↓
+    |         RootFiber#① ←→ WorkInProgress#①
+    |             ↓                 ↓
+    |           null              Ding#①
+    |             ↓                 ↓
+    |          ...null             ...
+    |
+    |
+    |
+    |                  第一次commit后
+    |           
+    |                               Root
+    |                                 ↓
+    |         RootFiber#① ←→ WorkInProgress#①
+    |              ↓                 ↓
+    |            null              Ding#①
+    |              ↓                 ↓
+    |          ...null              ...
+    |
+    |
+    |
+    |-------------------------------------------------------------------
+    |
+    |
+    |                   第二次commit前
+    |           
+    |                             Root
+    |                               ↓
+    |         RootFiber#① ←→ WorkInProgress#①
+    |             ↓                 ↓
+    |           null              Ding#①
+    |             ↓                 ↓
+    |          ...null             ...
+    |
+    |
+    |
+    |                       
+    | 当执行到performWorkOnRoot时会调用createWorkInProgress参数是 WorkInProgress#①
+    | createWorkInProgress中检测到WorkInProgress#①有值 是RootFiber#①
+    | 于是直接把RootFiber#①拿来用作本次Root节点的WorkInProgress 并且child指向current的child
+    | 也就是指向Ding#①
+    |
+    |                             Root
+    |                               ↓
+    |                        WorkInProgress#① ←→ RootFiber#①
+    |                               ↓                 │ 
+    |                             Ding#① ←————————————┙ 
+    |                               ↓
+    |                              ...
+    |
+    |
+    |
+    | 
+    | 创建完本次更新的RootFiber的workInProgress后会继续往下调度子节点
+    | 然后会发现本次RootFiber没有要更新的 于是执行bailoutOnAlreadyFinishedWork跳过本次更新
+    | 在执行跳过更新的函数时 如果发现有子节点需要更新的话 就执行cloneChildFibers克隆子节点
+    | 这个克隆子节点的方法中也是调用的createWorkInProgress
+    | 此时发现Ding#①没有alternate 于是会新创建一个fiber对象
+    |
+    |                              Root
+    |                               ↓
+    |                        WorkInProgress#① ←→ RootFiber#①
+    |                               ↓                 ↓
+    |                             Ding#①   ←——————→  Ding#②
+    |                               ↓                 │
+    |                              ...  ←—————————————┙
+    |
+    |
+    |
+    |              第二次commit之后
+    | 当本次更新commit之后 会让Root的current指向RootFiber#①
+    |
+    |                                               Root
+    |                                                 ↓
+    |                        WorkInProgress#① ←→ RootFiber#①
+    |                               ↓                 ↓
+    |                             Ding#①   ←——————→  Ding#②
+    |                               ↓                 ↓
+    |                              ...               ...
+    |
+    |
+    |----------------------------------------------------------------------------
+    |
+    |
+    |              第三次更新commit之前
+    | 同样从performWorkOnRoot开始调度Root
+    | 先对RootFiber#①执行createWorkInProgress 里面发现它有alternate指向WorkInProgress#①
+    |
+    |                                               Root
+    |                                                 ↓
+    |                        WorkInProgress#① ←→ RootFiber#①
+    |                               ↓                 ↓
+    |                             Ding#①   ←——————→  Ding#②
+    |                               ↓                 ↓
+    |                              ...               ...
+    |
+    | 
+    | 于是让本次的RootFiber的workInProgress继续指向WorkInProgress#①
+    | 变成下边这样
+    | 此时虽然在createWorkInProgress中会将workInProgress#①的child初始化成current.child(RootFiber#①)
+    | 但是Ding#②的alternate仍然指向Ding#①
+    |
+    |                                               Root
+    |                                                 ↓
+    |                                           RootFiber#① ←→ WorkInProgress#①
+    |                                                 ↓               │
+    |                             Ding#①  ←——————→  Ding#②  ←—————————┙
+    |                                                 ↓
+    |                                                ...
+    |
+    |
+    | 之后继续往下执行 会和第二次一样 发现RootFiber上没有更新
+    | 于是执行bailoutOnAlreadyFinishedWork跳过本次RootFiber的更新
+    | 但是在bailoutOnAlreadyFinishedWork中会同样会执行cloneChildFibers
+    | 这个函数中也会对本次RootFiber的WorkInProgress#①的子节点Ding#②进行createWorkInProgress
+    | 然后同样发现Ding#②有个alternate指向Ding#① 于是乎不创建新的fiber而是复用alternate
+    |
+    |
+    |                                               Root
+    |                                                 ↓
+    |                                           RootFiber#① ←→ WorkInProgress#①
+    |                                                 ↓               ↓
+    |                                               Ding#②  ←————→  Ding#①
+    |                                                 ↓               │
+    |                                                ...  ←———————————┙
+    |
+    |
+    |
+    |           第三次commit之后
+    |
+    | 当执行完commit的第二个循环后 dom节点已经都被渲染好了
+    | 于是让root.current = finishedWork
+    | finishedWork就是本次更新使用的Root的WorkInProgress
+    | 也就是WorkInProgress#① 
+    |
+    |
+    |
+    |                                                               Root
+    |                                                                 ↓
+    |                                           RootFiber#① ←→ WorkInProgress#①
+    |                                                 ↓               ↓
+    |                                               Ding#②  ←————→  Ding#①
+    |                                                 ↓               ↓
+    |                                                ...             ...
+    |
+    |
+    |-------------------------------------------------------------------
+    |
+    | 之后的setState更新逻辑就都一样了
+    | 也就是说 初次渲染的时候 除了Root会有个RootFiber以及有个对应的workInProgress作为RootFiber的alternate
+    | 剩下的节点都是只有workInProgress没有alternate的 也就是没有current
+    | 然后当commit完 也就是都把dom渲染到了浏览器上了 就会让root.current指向本次的workInProgress
+    |
+    | 之后当某个组件第一次执行了setState的时候 上一轮的workInProgress就会作为本次的current
+    | 并且由于是该组件第一次执行setState 所以本组件仍然是没有alternate的
+    | 不过在执行跳过没有更新的组件或节点的时候 可能会对该组件执行createWorkInProgress
+    | 会创建一个本组件本次更新要用到的workInProgress
+    | 这样他就有了alternate链接上一次的workInProgress和这次的workInProgress
+    | 最后当commit完之后 会再次让root.current指向本次的workInProgress
+    |
+    | 之后再对该组件执行setState的话 这个组件就有了alternate了
+    | 于是createWorkInProgress中会复用这个组件的alterante
+    | 
+    | 这样就相当于每次在执行setState时 本次和上次的workInProgress都会交换一次
+    | 虽然这次会复用上一次的workInProgress来作为本次的workInProgress 但是属性都是本次新的属性
+    | 只不过对于对象的引用地址是没变的
+    | 所以当获取实例的 _reactInternalFiber 属性时 每次都是可以获取到的
+    |
+    |
+    |
+    */
+
+
+
+
+
+    // 先获取对应的fiber
+    let fiber = instance._reactInternalFiber
+    let currentTime = requestCurrentTime()
+    let expirationTime = computeExpirationForFiber(currentTime, fiber)
+    
+    /*
+      createUpdate 就是这个东西
+      return {
+        expirationTime: expirationTime, // 更新的优先级
+        tag: UpdateState, // 对应四种情况 0更新(update) 1替换(replace) 2强更(force) 3捕获(capture; 就是渲染时候如果出错了就被捕获了)
+        payload: null, // setState传进来的参数 也就是新的state
+        callback: null,
+        next: null, // 下一个update
+        nextEffect: null, // 
+      };
+    */
+    let update = createUpdate(expirationTime)
+    // 然后把update上挂上payload payload就是setState的第一个参数
+    update.payload = payload
+    enqueueUpdate(fiber, update)
   },
   enqueueForceUpdate() {}
 }

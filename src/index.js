@@ -76,8 +76,8 @@ class Ding3 extends React.Component {
     ding: 1
   }
   handleClick1 = (event) => {
-    // console.log(event)
-    // console.log('div')
+    console.log(event)
+    console.log('div')
     // event.stopBubble()
     // console.log('div')
   }
@@ -87,16 +87,20 @@ class Ding3 extends React.Component {
     // console.log('h1')
   }
   handleClick3 = (num, event) => {
-    console.log(this.state)
+    // console.log(this.state)
     // console.log(num, event)
     // console.log('parent')
-    // this.setState({
-    //   ding: ++this.state.ding
-    // })
+    this.setState({
+      ding: ++this.state.ding
+    }, () => {
+      console.log(111, this)
+    })
   }
   handleChange = (e) => {
     console.log(e.target.value)
-    // console.log(this.setState)
+    // this.setState({
+    //   ding: 9999
+    // })
   }
   render () {
     console.log(this.state.ding)
@@ -104,10 +108,10 @@ class Ding3 extends React.Component {
     return (
       <div onClick={this.handleClick3.bind(this, 222)}>
         clickme {this.state.ding}
-        {/* 8888899 */}
-        {/* <input type="text" onKeyDown={this.handleChange}/> */}
-        {/* <h1 onClick={this.handleClick2}>{this.props.ding1}</h1> */}
-        {/* <button onClick={this.handleClick1}handleClick1>点我</button> */}
+        {/* 8888899
+        <input type="text" onKeyDown={this.handleChange}/>
+        <h1 onClick={this.handleClick2}>{this.props.ding1}</h1>
+        <button onClick={this.handleClick1}handleClick1>点我</button> */}
       </div>
     )
   }
