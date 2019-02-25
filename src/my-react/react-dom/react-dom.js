@@ -2454,6 +2454,22 @@ const classComponentUpdater = {
     console.log(callback)
     debugger
 
+
+    /*
+      执行setState时
+      基数次更新时(1, 3, 5, ...)
+      instance对应的fiber是current
+      执行processUpdateQueue时fiber的updateQueue不会改变
+      偶数次更新时(2, 4, 6, ...)
+      instance对应的fiber是workInProgress
+      执行processUpdateQueue时fiber的updateQueue会被操作
+
+
+    */
+
+
+
+
     /*
       <Ding>
         <button></button>
