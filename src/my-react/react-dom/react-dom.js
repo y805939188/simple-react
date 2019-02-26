@@ -40,8 +40,8 @@ let nextEffect = null
 
 let noTimeout = -1 // 这个没啥b用 就是单纯告诉你不延时
 
-// let firstScheduledRoot = null
-// let lastScheduledRoot = null
+let firstScheduledRoot = null
+let lastScheduledRoot = null
 
 // let callbackExpirationTime = NoWork
 // let callbackID = void 0
@@ -374,7 +374,7 @@ function scheduleWorkToRoot(fiber, expirationTime) {
   // 如果当前这个节点的tag类型就已经是HostRoot了 说明它自己就是个FiberRoot 直接返回它的实例就好
   if (fiber.tag === HostRoot) return fiber.stateNode
   while (parentNode !== null) {
-    // 这里就是要更新当前fiber已经它所有父节点包括爷爷 太爷爷节点等等的childExpirationTime
+    // 这里就是要更新当前fiber以及它所有父节点包括爷爷 太爷爷节点等等的childExpirationTime
     // 这个childExpriationTime在之后更新时候会用来判断是否可以直接跳过更新 用作优化的
     // 然后alternate上面也要保持同步
     alternate = parentNode.alternate
@@ -389,11 +389,12 @@ function scheduleWorkToRoot(fiber, expirationTime) {
 }
 
 function markPendingPriorityLevel(root, expirationTime) {
-  // 每次一轮更新完成之后earliestPendingTime和latestPendingTime还有latestPendingTime
-  // 会被重置为NoWork
-  // 这个表示root上优先级最高的任务
+  // 每次一轮更新完成之后earliestPendingTime和latestPendingTime还有latestPendingTime会被重置为NoWork
+
+  // 这个表示root上等待更新的优先级最高的任务
+  // earliestPendingTime是NoWork的话说明这个root目前没有等待更新的任务
   let earliestPendingTime = root.earliestPendingTime
-  // 这个表示root上优先级最低的任务
+  // 这个表示root上等待更新的优先级最低的任务
   let latestPendingTime = root.latestPendingTime
   if (earliestPendingTime === NoWork) {
     // 第一次渲染肯定是走到这步 最高和最低这俩在初始化的时候都是NoWork状态
@@ -406,6 +407,22 @@ function markPendingPriorityLevel(root, expirationTime) {
   }
   // 这个函数是用来给root上添加有限级时间的 这里面添加的时间才是最后更新时候真正会用到的时间
   // findNextExpirationTimeToWorkOn(expirationTime, root)
+  // 这里会涉及到suspense组件
+
+  // expirationTime和nextExpirationTimeToWorkOn的区别
+  // expirationTime是作用在渲染前的
+  // nextExpirationTimeToWorkOn是作用在渲染时的
+
+  // expirationTime在scheduleCallbackWithExpirationTime被执行时那第二个参数就是这个root.expirationTime
+  // 就是说它表示在异步渲染模式下 这个每次异步执行的callback在什么时间节点是过期的
+  // 只要这个expirationTime不是Sync 那他就有可能会执行异步的渲染
+
+  // nextExpirationTimeToWorkOn表示当前正在更新的这个任务的优先级的
+  // nextExpirationTimeToWorkOn在beginWork中用来判断每个fiber节点上是否有任务要被执行
+  // 如果某个节点上的最高的任务的优先级要比nextExpirationTimeToWorkOn低的话 那就可以跳过这个更新
+
+  // 其实这俩time 可以简单理解成 expirationTime是更新模式
+  // nextExpirationTimeToWorkOn是更新任务的优先级
   let nextExpirationTimeToWorkOn = expirationTime
   root.nextExpirationTimeToWorkOn = nextExpirationTimeToWorkOn
   root.expirationTime = expirationTime
@@ -424,9 +441,9 @@ function performSyncWork(root) {
 }
 
 function performWork(minExpirationTime, isYield) {
-  // react源码中这里先是找了一下有最高优先级的root
-  // 调用了一个叫做findHighestPriorityRoot的方法
-  // 不过有多个root也就是应用不止一个挂载点的情况比较少 所以暂时先不做 以后再弄
+
+  findHighestPriorityRoot()
+
   if (!isYield) {
     // 进入这里说明是优先级高 不允许暂停
     // 第三个参数表示不能暂停
@@ -455,7 +472,7 @@ function performWork(minExpirationTime, isYield) {
     // 当进行下一次while的时候也会由于minExpirationTime(Sync) > nextFlushedExpirationTime而跳过这个更新
     // 不过当异步更新的时候
     // 执行performAsync时候传进的是NoWork 就相当于每次while的时候的minExpirationTime是NoWork
-    // 所以在异步更新的时候如果有个优先级低 就比如当前一个任务被挂起时 用户正好点击了一下更新的情况
+    // 所以在异步更新的时候如果有个优先级低 就比如当前一个任务被中断时 用户正好点击了一下更新的情况
     // 这个第二次点击更新就是一个优先级比上一次挂起的那个任务优先级低的任务
     // 然后这里判断的时候就会发现 nextFlushedExpirationTime > NoWork
     // 如果同时currentRendererTime 也就是当前的精确时间优先级小于 nextFlushedExpirationTime
@@ -476,6 +493,91 @@ function performWork(minExpirationTime, isYield) {
       // recomputeCurrentRendererTime()
     // }
   }
+}
+
+function findHighestPriorityRoot() {
+  // 这是俩临时变量
+  // 用来代替全局的nextFlushedRoot和nextFlushedExpirationTime
+  // 用临时变量可以减少往上查作用域
+  let highestPriorityWork = NoWork
+  let highestPriorityRoot = null
+  if (!!lastScheduledRoot) {
+    let root = firstScheduledRoot
+    let previousScheduledRoot = lastScheduledRoot
+    while (!!root) {
+      // root的expriationTime === NoWork 说明这个节点没有任何更新
+      // 就是当任务都执行完了会把root的expirationTime置为NoWork
+      // 所以如果本次的setState不是执行在某个root上的时候
+      // 这时候这个root的expirationTime就是NoWork
+      // 或者在循环执行root的更新时 执行已经被执行完更新的root也会是NoWork
+      if (root.expirationTime === NoWork) {
+        if (root === root.nextScheduledRoot) {
+          // 进入这里说明当前只有一个root节点待更新 并且这个root还没有任务
+          // 所以把那些东西都置为null就好
+          root.nextScheduledRoot = null
+          firstScheduledRoot = lastScheduledRoot = null
+          break
+        } else if (root === firstScheduledRoot) {
+          // 进入这里说明有多个root节点要被调度
+          // 当前root没任务 于是先获取当前root的下一个root
+          let next = root.nextScheduledRoot
+          // 之后让全局的这个firstScheduleRoot指向下一个root
+          firstScheduledRoot = next
+          // 再更新lastScheduleRoot的next 这就是循环链表的正常操作
+          lastScheduledRoot.nextScheduledRoot = next
+          // 由于当前root没不需要用它 并且它的下一个root已经被保存了 就把它的下一个root置为null
+          root.nextScheduledRoot = null
+          // 之后用当前这个root的下一个root进行下一轮的while循环
+        } else if (root === lastScheduledRoot) {
+          // 进入这里说明当前这个没有任务的root已经是最后一个带调度的root了
+          // 由于这个root进到这里说明它没有更新 那么就在链表上删除这个root
+          // 先让最后一个root变量等于上一个root
+          lastScheduledRoot = previousScheduledRoot
+          // 然后让新晋的最后root的next的Root等于第一个root
+          lastScheduledRoot.nextScheduledRoot = firstScheduledRoot
+          // 最后得把当前这个root下一个root的指向给干掉
+          root.nextScheduledRoot = null
+          // 到了最后一个root了 可以直接跳出了
+          // 因为很可能已经在前几轮的while中找到了优先级最高的即将要被调度的root了
+          break
+        } else {
+          // 进入到这里说明当前这条root链表有超过两个的root
+          // 并且能进入这里 说明在当前这个root之前 肯定起码有一个root上有任务要更新
+          // 如果这个root之前的所有root都没有任务的话 那么这个root肯定在上一轮就变成了firstScheduleRoot了
+          // previousScheduledRoot此时表示上一个有更新的root
+          // 然后这里让上一个有更新的root的下一个root指向当前root的下一个root
+          // 再把当前root的下一个root置为null 把当前root在链表中干掉
+          previousScheduledRoot.nextScheduledRoot = root.nextScheduledRoot
+          root.nextScheduledRoot = null
+        }
+        // 走到这儿
+        // 要么说明当前这个root是第一个root
+        // 由于在上面的逻辑中第一个root已经被做掉了
+        // 所以previousScheduledRoot也就是lastScheduledRoot
+        // 它的nextScheduleRoot自然指向当前root的下一个root
+
+        // 要么说明链表上有两个以上的root同时在之前至少已经有一个root有更新
+        // 在之前那个有更新的root的逻辑中肯定会把previousScheduledRoot指向当前root的前一个root
+        
+        // 所以不管是以上两种中的那种情况 这里都要让root指向previousScheduledRoot的下一个root
+        root = previousScheduledRoot.nextScheduledRoot
+      } else {
+        // 进入这里 说明当前这个root上有更新
+        if (remainingExpirationTime > highestPriorityWork) {
+          highestPriorityRoot = root
+          highestPriorityWork = remainingExpirationTime
+        }
+        if (root === lastScheduledRoot) break // 如果这都最后一个root了 那就可以直接退出了
+        if (highestPriorityWork === Sync) break // 如果这个任务是同步任务说明优先级最大 也可以直接跳出
+        // 最后让上一个root指向当前这个root 以便下一轮可以使用本轮的root
+        previousScheduledRoot = root
+        root = root.nextScheduledRoot
+      }
+    }
+  }
+  // 最后返回一个优先级最高的root
+  nextFlushedRoot = highestPriorityRoot
+  nextFlushedExpirationTime = highestPriorityWork
 }
 
 function scheduleCallbackWithExpirationTime(root, expirationTime) {}
@@ -1364,6 +1466,8 @@ function commitRoot(root, finishedWork) {
 }
      
 function requestWork(root, expirationTime) {
+  addRootToSchedule(root, expirationTime)
+
   // 如果isRendering是true说明目前正在更新fiber树
   // 这种情况不需要再执行requestWork 因为异步调度的关系
   // 当放在requestAnimationFrame中的下一帧的任务开始时会自动调度
@@ -1376,6 +1480,39 @@ function requestWork(root, expirationTime) {
   if (expirationTime === Sync) return performSyncWork(root)
   // 如果时间不为Sync说明可能是个异步任务或者批量任务
   if (expirationTime !== Sync) return scheduleCallbackWithExpirationTime(root, expirationTime)
+}
+
+function addRootToSchedule(root, expirationTime) {
+  // lastScheduledRoot 和 firstScheduleRoot这俩是全局变量
+  // 如果react应用存在多个 root 可能会这俩会成为一个单向链表的结构
+  if (!root.nextScheduledRoot) {
+    root.expirationTime = expirationTime
+    if (!lastScheduledRoot) {
+      firstScheduledRoot = lastScheduledRoot = root
+      // 当react运行了个异步任务时候
+      // 如果被中断了 然后浏览器又添加了一个新的任务的时候
+      // 可能会调用两次 addRootToSchedule
+      // 这个时候两次更新的 root都是一样的
+      // 所以就变成了 root.nextScheduledRoot = root
+      root.nextScheduledRoot = root
+    } else {
+      // 这个就是循环链表正常的改变指向的操作
+      lastScheduledRoot.nextScheduledRoot = root
+      lastScheduledRoot = root
+      lastScheduledRoot.nextScheduledRoot = firstScheduledRoot
+    }
+  } else {
+    // 进入这里说明root已经被调度了
+    // 比如在同一个click事件中执行了两次setState
+    // 每次执行都会进入这里
+    // 当第二次进来的时候这个root是已经有nextScheduleRoot的
+    let remainingExpirationTime = root.expirationTime
+    if (remainingExpirationTime < expirationTime) {
+      // 能走到这里就说明这回这个新的setState的优先级比上回那个大
+      // 比如它用了flushSync之类的 于是要更新 root上的expirationTime
+      root.expirationTime = expirationTime
+    }
+  }
 }
 
 function scheduleWork(fiber, expirationTime) {
@@ -2730,6 +2867,7 @@ const classComponentUpdater = {
     // 然后把update上挂上payload payload就是setState的第一个参数
     update.payload = payload
     enqueueUpdate(fiber, update)
+    scheduleWork(fiber, expirationTime)
   },
   enqueueForceUpdate() {}
 }
