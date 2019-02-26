@@ -73,7 +73,8 @@ class Ding extends React.Component {
 
 class Ding3 extends React.Component {
   state = {
-    ding: 1
+    ding: 1,
+    ding2: 666
   }
   handleClick1 = (event) => {
     console.log(event)
@@ -90,8 +91,9 @@ class Ding3 extends React.Component {
     // console.log(this.state)
     // console.log(num, event)
     // console.log('parent')
+    let ding = this.state.ding
     this.setState({
-      ding: ++this.state.ding
+      ding: ++ding
     }, () => {
       console.log(111, this)
     })
@@ -103,8 +105,6 @@ class Ding3 extends React.Component {
     // })
   }
   render () {
-    console.log(this.state.ding)
-    let ding = this.state.ding
     return (
       <div onClick={this.handleClick3.bind(this, 222)}>
         clickme {this.state.ding}

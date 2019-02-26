@@ -432,11 +432,6 @@ function performSyncWork(root) {
   // 同步更新的情况下只干了一件事就是调用performWork
   // 第一个参数是表示优先级是同步的最高优先级
   // 第二个参数禁止yield也就是不能暂停 从头到尾一把梭
-  // nextFlushedRoot是一个全局变量 表示接下来要更新哪个root节点
-  // nextFlushedExpirationTime也是个全局变量 表示接下来要更新的root的优先级时间
-  // 正常来讲不应该写在这 但是先这么着吧
-  nextFlushedRoot = root
-  nextFlushedExpirationTime = Sync
   performWork(Sync, false)
 }
 
@@ -447,43 +442,43 @@ function performWork(minExpirationTime, isYield) {
   if (!isYield) {
     // 进入这里说明是优先级高 不允许暂停
     // 第三个参数表示不能暂停
-    // while (
-    //   !!nextFlushedRoot &&
-    //   !!nextFlushedExpirationTime &&
-    // 这个minExpirationTime <= nextFlushedExpirationTime的意义是什么呢
-    // 当同步调用和异步断点调用的时候 传进来的这个minExpirationTime是不一样的
-    // 当同步时传进来的就是Sync 意味着这个任务的优先级最大 比如flushSync的时候
-    // 如果在执行这个flushSync之前还有一个优先级比较低的异步任务的话
-    // 那么在processUpdateQueue执行更新state的操作时候就会暂时先忽略那个优先级低的
-    // 然后在processUpdateQueue中会把第一个优先级低于当前这个Sync的作为firstUpdate
-    // 并将这个update的expirationTime挂在workInProgress上
-    // 之后当一侧的节点都更新完成会执行那个completeWork方法
-    // 在这个方法中有个resetChildExpirationTime
-    // 在往父节点们遍历的过程中都会执行到这个重置的方法
-    // 之后就会把刚才在processUpdateQueue中挂在workInProgress上的那个expirationTime
-    // 作为他节点们的childExpirationTime
-    // 最后在commit过程中 当执行完最后那三个while循环后会执行一个叫做onCommit的方法
-    // 这个方法就会把这个childExpiration给root 作为root.expirationTime
-    // 然后这个root就算是更新完成了
-    // 然后一般会执行一个findHighestPriorityRoot的方法找root
-    // 然后就会读取root.expirationTime 如果有的话就作为全局变量 nextFlushedExpirationTime
-    // 所以这里对比的就是传进来的time和这个nextFlushedExpirationTime
-    // 如果当执行了flushSync的时候传进来的是Sync 那么就算还有一个优先级低的任务被放置了
-    // 当进行下一次while的时候也会由于minExpirationTime(Sync) > nextFlushedExpirationTime而跳过这个更新
-    // 不过当异步更新的时候
-    // 执行performAsync时候传进的是NoWork 就相当于每次while的时候的minExpirationTime是NoWork
-    // 所以在异步更新的时候如果有个优先级低 就比如当前一个任务被中断时 用户正好点击了一下更新的情况
-    // 这个第二次点击更新就是一个优先级比上一次挂起的那个任务优先级低的任务
-    // 然后这里判断的时候就会发现 nextFlushedExpirationTime > NoWork
-    // 如果同时currentRendererTime 也就是当前的精确时间优先级小于 nextFlushedExpirationTime
-    // 也就是说对于该更新的过期时间 当前时间还够 还有富余的话 就继续执行performWorkOnRoot
-    //   minExpirationTime <= nextFlushedExpirationTime
-    // ) {
+    while (
+      !!nextFlushedRoot &&
+      !!nextFlushedExpirationTime &&
+      // 这个minExpirationTime <= nextFlushedExpirationTime的意义是什么呢
+      // 当同步调用和异步断点调用的时候 传进来的这个minExpirationTime是不一样的
+      // 当同步时传进来的就是Sync 意味着这个任务的优先级最大 比如flushSync的时候
+      // 如果在执行这个flushSync之前还有一个优先级比较低的异步任务的话
+      // 那么在processUpdateQueue执行更新state的操作时候就会暂时先忽略那个优先级低的
+      // 然后在processUpdateQueue中会把第一个优先级低于当前这个Sync的作为firstUpdate
+      // 并将这个update的expirationTime挂在workInProgress上
+      // 之后当一侧的节点都更新完成会执行那个completeWork方法
+      // 在这个方法中有个resetChildExpirationTime
+      // 在往父节点们遍历的过程中都会执行到这个重置的方法
+      // 之后就会把刚才在processUpdateQueue中挂在workInProgress上的那个expirationTime
+      // 作为他节点们的childExpirationTime
+      // 最后在commit过程中 当执行完最后那三个while循环后会执行一个叫做onCommit的方法
+      // 这个方法就会把这个childExpiration给root 作为root.expirationTime
+      // 然后这个root就算是更新完成了
+      // 然后一般会执行一个findHighestPriorityRoot的方法找root
+      // 然后就会读取root.expirationTime 如果有的话就作为全局变量 nextFlushedExpirationTime
+      // 所以这里对比的就是传进来的time和这个nextFlushedExpirationTime
+      // 如果当执行了flushSync的时候传进来的是Sync 那么就算还有一个优先级低的任务被放置了
+      // 当进行下一次while的时候也会由于minExpirationTime(Sync) > nextFlushedExpirationTime而跳过这个更新
+      // 不过当异步更新的时候
+      // 执行performAsync时候传进的是NoWork 就相当于每次while的时候的minExpirationTime是NoWork
+      // 所以在异步更新的时候如果有个优先级低 就比如当前一个任务被中断时 用户正好点击了一下更新的情况
+      // 这个第二次点击更新就是一个优先级比上一次挂起的那个任务优先级低的任务
+      // 然后这里判断的时候就会发现 nextFlushedExpirationTime > NoWork
+      // 如果同时currentRendererTime 也就是当前的精确时间优先级小于 nextFlushedExpirationTime
+      // 也就是说对于该更新的过期时间 当前时间还够 还有富余的话 就继续执行performWorkOnRoot
+      minExpirationTime <= nextFlushedExpirationTime
+    ) {
       performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, false)
-      nextFlushedExpirationTime = NoWork
-      nextFlushedRoot = null
-      // findHighestPriorityRoot()
-    // }
+      // nextFlushedExpirationTime = NoWork
+      // nextFlushedRoot = null
+      findHighestPriorityRoot()
+    }
   } else {
     // while (nextFlushedRoot !== null && nextFlushedExpirationTime !== NoWork && minExpirationTime <= nextFlushedExpirationTime && !(didYield && currentRendererTime > nextFlushedExpirationTime)) {
       performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, currentRendererTime > nextFlushedExpirationTime);
@@ -505,12 +500,13 @@ function findHighestPriorityRoot() {
     let root = firstScheduledRoot
     let previousScheduledRoot = lastScheduledRoot
     while (!!root) {
+      let remainingExpirationTime = root.expirationTime
       // root的expriationTime === NoWork 说明这个节点没有任何更新
       // 就是当任务都执行完了会把root的expirationTime置为NoWork
       // 所以如果本次的setState不是执行在某个root上的时候
       // 这时候这个root的expirationTime就是NoWork
       // 或者在循环执行root的更新时 执行已经被执行完更新的root也会是NoWork
-      if (root.expirationTime === NoWork) {
+      if (remainingExpirationTime === NoWork) {
         if (root === root.nextScheduledRoot) {
           // 进入这里说明当前只有一个root节点待更新 并且这个root还没有任务
           // 所以把那些东西都置为null就好
@@ -612,8 +608,10 @@ function renderRoot(root, isYield) {
   isWorking = true
 
   // nextExpirationTimeToWorkOn就是在findNextExpirationTimeToWorkOn函数中被赋值的
-  // 我这里暂时没写那个函数 暂时先让它是Sync
-  // nextExpirationTimeToWorkOn是root里有最高优先级的fiber的expirationTime
+  // 它表示在异步渲染时 要commit任务的最晚时间 超过的话就要使用同步更新了
+  // findNextExpirationTimeToWorkOn的值是优先级最大的待更新的任务
+  // 如果没有待更新的任务的话 那他可能就是被suspense挂起的优先级最小的任务
+  // 基本上不使用suspense组件的话 它就是本次更新的优先级最大的任务的那个时间
   let expirationTime = root.nextExpirationTimeToWorkOn
   if (nextUnitOfWork === null || expirationTime !== nextRenderExpirationTime) {
     // nextUnitOfWork是空说明还没有要工作的fiber
@@ -778,7 +776,6 @@ function workLoop(isYield) {
 
 function performUnitOfWork(workInProgress) {
   // beginWork就是开始工作 开始工作就是创建出子fiber节点
-  // debugger
   let next = beginWork(workInProgress)
   workInProgress.memoizedProps = workInProgress.pendingProps
 
@@ -1016,6 +1013,8 @@ function completeWork(workInProgress) {
     return null
   }
   if (tag === HostText) {
+    let newText = workInProgress.pendingProps
+    workInProgress.stateNode = document.createTextNode(newText)
     return null
   }
   // 这里其实在react源码中还有好多其他类型
@@ -1048,7 +1047,6 @@ function appendAllChildren(parentInstance, workInProgress) {
   //     Ding 组件类型 有child 走下面的循环
   //       h3 没有 child不走这里 但是会直接把h3放在h2的后面
   let node = workInProgress.child
-  // debugger
   // if (!node) {
   //   let children = workInProgress.pendingProps.children
   //   if (children && (typeof children === 'number' || typeof children === 'string')) {
@@ -1208,7 +1206,6 @@ function temp_dispatch_event_fn1(eventName, event) {
   let nextFiber = target.__reactInternalInstance
   let temp_parent_arr = []
   let rootContainer = null
-  // debugger
   while (true) {
     if (nextFiber.tag === HostRoot) {
       rootContainer = nextFiber.stateNode.containerInfo
@@ -1251,7 +1248,6 @@ function temp_dispatch_event_fn2(eventName, isBubble, event) {
   let nextFiber = target.__reactInternalInstance
   let temp_parent_arr = []
   let rootContainer = null
-  // debugger
   while (true) {
     if (nextFiber.tag === HostRoot) {
       rootContainer = nextFiber.stateNode.containerInfo
@@ -1312,6 +1308,7 @@ function interactiveUpdates(fn, eventName, event) {
 }
 
 function bailoutOnAlreadyFinishedWork(workInProgress) {
+  let renderExpirationTime = nextRenderExpirationTime
   if (workInProgress.childExpirationTime < renderExpirationTime) {
     // childExpirationTime表示该fiber以及它的子节点们上优先级最大的一个更新
     // 所以进入这里就是说这个fiber包括它的子节点上没有任何一个fiber的更新的优先级要大于或等于这个renderExpirationTime
@@ -2012,8 +2009,19 @@ function updateClassInstance(workInProgress, newProps) {
   }
 
   // 如果前后两次的props和state都相等的话就直接返回false作为shouldUpdate
+  let current = workInProgress.alternate
   let oldProps = workInProgress.memoizedProps
   if ((oldProps === newProps) && (oldState === newState)) {
+    if (typeof instance.componentDidUpdate === 'function') {
+      if (oldProps !== current.memoizedProps || oldState !== current.memoizedState) {
+        workInProgress.effectTag |= Update
+      }
+    }
+    if (typeof instance.getSnapshotBeforeUpdate === 'function') {
+      if (oldProps !== current.memoizedProps || oldState !== current.memoizedState) {
+        workInProgress.effectTag |= Snapshot
+      }
+    }
     return false
   }
 
@@ -2026,16 +2034,30 @@ function updateClassInstance(workInProgress, newProps) {
 
   // 判断是否有shouldComponentUpdate这个周期 并直接返回这个周期的返回值作为shouldUpdate
   let shouldComponentUpdateLife = instance.shouldComponentUpdate
+  let shouldUpdate = true
   if (typeof shouldComponentUpdateLife === 'function') {
-    return shouldComponentUpdate(newProps, newState)
+    shouldUpdate = shouldComponentUpdate(newProps, newState)
+    if (shouldUpdate) {
+      if (typeof instance.componentDidUpdate === 'function') {
+        workInProgress.effectTag |= Update
+      }
+      if (typeof instance.getSnapshotBeforeUpdate === 'function') {
+        workInProgress.effectTag |= Snapshot
+      }
+    } else {
+      // 如果不更新的话 也要把fiber上的props和state置为最新
+      workInProgress.memoizedProps = newProps
+      workInProgress.memoizedState = newState
+    }
   }
+  instance.props = newProps
+  instance.state = newState
 
   // 其实这里应该还要判断一下是否是 PureComponent
   // 但是这个比较简单 就是单纯浅对比了一下新旧State和Props
   // 这个自己在react里判断都行 所以这儿就先不写了
 
-  // 其他任何情况都是要返回true作为shouldUpdate
-  return true
+  return shouldUpdate
 }
 
 function finishClassComponent(workInProgress, shouldUpdate) {
@@ -2267,7 +2289,8 @@ function reconcileChildFibers(workInProgress, newChild, isMount) {
     // 说明newChild是个文本类型的
     return reconcileSingleTextNode(workInProgress, currentFirstChild, String(newChild))
   }
-  return deleteRemainingChildren(workInProgress, currentFirstChild)
+  deleteRemainingChildren(workInProgress, currentFirstChild)
+  return null
 }
 
 function reconcileSingleElement(returnFiber, currentFirstChild, element) {
@@ -2326,14 +2349,16 @@ function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren, isM
   // react 源码中在处理数组类型的子节点时 用了一堆特别复杂的算法对比key和index等等东西
   // 我这里先不用他那个大算法了 那个确实比较复杂 等回头我再慢慢加上优化
 
+  let returnFiberLastChild = null
   if (!!currentFirstChild) {
     // 如果有子节点的话 就直接都干掉
     // 不过react里进行了特别屌的复杂度是 O(n) 的优化
-    deleteRemainingChildren(returnFiber, currentFirstChild)
+    returnFiberLastChild = deleteRemainingChildren(returnFiber, currentFirstChild)
   }
   // 根据本次的newChildren生成新的fiber
-  let firstChild = null
-  let prevFiber = null
+  
+  let firstChild = returnFiberLastChild || null
+  let prevFiber = firstChild
   for (let i = 0; i < newChildren.length; i++) {
     let newFiber = createChild(returnFiber, newChildren[i])
     if (!newFiber) continue
@@ -2346,7 +2371,8 @@ function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren, isM
     }
     prevFiber = newFiber
   }
-  return firstChild
+  // return firstChild
+  return currentFirstChild ? currentFirstChild : firstChild
 }
 
 function createChild(returnFiber, newChild) {
@@ -2427,12 +2453,17 @@ function deleteRemainingChildren(returnFiber, currentFirstChild) {
   // 比如说当节点是文本类型且只有一个子节点的时候要删除
   // 再比如说当删除多余的子节点 举个例子就是上一次有5个子节点 更新之后只有三个子节点 要删除多余的俩
   // 还比如当前节点前后两次key不一样的情况就直接干掉他子节点们
+  let returnFiberLastChild = null
   while (!!currentFirstChild) {
     // 要把所有的子节点都删除
     deleteChild(returnFiber, currentFirstChild)
-    currentFirstChild = currentFirstChild.fiber
+    if (!currentFirstChild.sibling) {
+      returnFiberLastChild = currentFirstChild
+      break
+    }
+    currentFirstChild = currentFirstChild.sibling
   }
-  return null
+  return returnFiberLastChild
 }
 
 function deleteChild(returnFiber, toBeDeleteChild) {
