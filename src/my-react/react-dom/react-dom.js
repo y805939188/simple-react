@@ -248,60 +248,105 @@ function appendUpdateToQueue(queue, update) {
   }
 }
 
-function enqueueUpdate(current, update) {
-  // 我觉得更新可以理解成是 实例的更新
-  // 比如dom节点有变化了 就是dom节点这个实例要更新
-  // 比如class组件要更新了 也是要调用类这个实例的方法来更新
-  // 于是初次渲染的时候 根fiber的实例也就是stateNode是FiberRoot
-  // 所以调用了FiberRoot这个根fiber实例上的更新方法updateContainer
-  // 然后要更新的内容就是ReactDOM.render中传进来的第二个参数
-  // 把这个参数作为payload放进这个fiber的更新队列上
+function enqueueUpdate(fiber, update) {
+  // let queue1 = null
+  // let queue2 = null
+  // let alternate = fiber.alternate // 初次渲染的时候肯定是null
 
-  // 之所以有两个queue是要保持alternate和current同步
-  // alternate可以理解成连接新旧fiber的一个桥
-  // 当有新的update来个并更新完了之后
-  // 在有些情况下如果需要恢复到上一次的状态 就可以用这个alternate
+  // 这里的fiber.alternate不能叫current
+  // 因为在之后的逻辑中 这个fiber.alternate有可能作为workInProgress
+  // 也可能作为current  
+  let alternate = fiber.alternate
+  let queue1 = fiber.updateQueue || null
+  let queue2 = alternate ? alternate.updateQueue : null
 
-  let queue1 = null
-  let queue2 = null
-  let alternate = current.alternate // 初次渲染的时候肯定是null
+
   // 初次渲染和第一次setState时都没有alternate
   // 第一次setState时没有是因为
   // 初次渲染的时候只有current没有alternate
   // 但是在之后的逻辑中会将current和alternate的指针对换
   // 所以第一次setState时候
   if (!alternate) {
-    // 进入这里一般来说就是首次渲染或首次setState
-    // 第一次setState没有alternate是因为
-    // 初次渲染时候alternate肯定没有值
-    // 这个时候给current上创建了一个updateQueue
-    // 首次渲染时是没有上一次的状态的
-    // 所以也就不需要queue2
-    queue1 = current.updateQueue || (current.updateQueue = createUpdateQueue(current.memoizedState))
+    // 初次渲染根节点以及某个组件第一次执行setState时会走到这儿
+    queue1 = fiber.updateQueue || (fiber.updateQueue = createUpdateQueue(fiber.memoizedState))
     queue2 = null
   } else {
-    // 由于在之后会把alternate和current交换指针
-    // 所以在首次setState时 queue1有可能是null
-    // queue1 = current.updateQueue // 得到当前fiber的updateQueue
-    // queue2 = alternate.updateQueue // 得到上一次当前fiber的updateQueue
-    // if (queue1 === null) {
-    //   if (queue2 === null) {
-    //     queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState);
-    //     queue2 = alternate.updateQueue = createUpdateQueue(alternate.memoizedState);
-    //   } else {
-    //     queue1 = fiber.updateQueue = cloneUpdateQueue(queue2);
-    //   }
-    // } else {
-    //   if (queue2 === null) {
-    //     queue2 = alternate.updateQueue = cloneUpdateQueue(queue1);
-    //   }
-    // }
+    // 进到这里的话 说明肯定不是初次渲染或者该组件第一次执行setState
+    // 只有当某个组件第二次或第二次执行了setState之后才会进入这里
+
+    // 但是基本上进到这里来的情况 queue1和queue2的updateQueue应该都有
+    // 所以大多数情况下如果有alternate的话 进入这里都不会执行什么逻辑
+    // 这里的逻辑也主要就是看queue1和queue2有没有值 如果没有就create一个UpdateQueue或者克隆一个
+
+
+    // ただし！！！
+    // 当节点effecttag是Update或PlacementAndUpdate的情况下会执行commitWork
+    // commitWork中如果当前这个节点是HostComponet或者是SuspenseComponent的话
+    // 会把这个节点的updateQueue置为null
+
+    // 或者当删除的时候执行commitDeletion函数中会调用detacheFiber
+    // 会把这个节点updateQueue置为null
+
+    // 以上两种情况 第二种是删除节点的行为 所以可以忽略不计
+    // 也就是说只有第一种情况时可能会把updateQueue置为null
+
+    if (!queue1 && !queue2) {
+      // 进入这里说明俩都没有 所以都创建一条updateQueue
+      queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState)
+      queue2 = alternate.updateQueue = createUpdateQueue(alternate.memoizedState)
+    } else if (!queue1 && queue2) {
+      // 进入这里说明只有queue2上有值 queue1上没有 给queue1创建updateQueue
+      queue1 = fiber.updateQueue = cloneUpdateQueue(queue2)
+    } else if (queue1 && !queue2) {
+      // 进入这里说明只有queue1上有值 queue2上没有 给queue2创建updateQueue
+      queue2 = alternate.updateQueue = cloneUpdateQueue(queue1)
+    }
   }
 
   if (queue2 === null || queue1 === queue2) {
+    // 进入这里 说明只有一条
+    // 至于queue1等于queue2的情况
+    // 我个人感觉 只有在createWorkInProgress中会让俩指向同一个引用
+    // 但是如果是组件执行setState而进入这里的话 一般不会存在queue1 === queue2的情况
+    // 因为在上一轮更新中 组件肯定会执行processUpdateQueue 这里会对workInProgress的链表进行克隆
+    // 但是既然react源码里也写了这个判断 那可能是还有我没发现的场景 所以我也先写上吧
     appendUpdateToQueue(queue1, update)
+    // 这里因为是只有一条链表或者是两条链表指向同一个引用
+    // 所以只需要对其中一个引用执行appendUpdateToQueue就好
   } else {
-    
+    // 当该组件中 是偶数次执行setState时
+    // 比如第2次执行setState是 queue1 也就是fiber.updateQueue上肯定会保留着上次setState时的状态
+    // 因为在上一轮的奇数次setState时 fiber是作为current的
+    // 在processUpdateQueue中 只会修改workInProgress.updateQueue的状态
+    // 所以上一轮的current的updateQueue作为这一轮更新的fiber 把updateQueue的状态保留了下来
+    // setState奇数次执行时则和偶数次相反
+    // 比如第3次执行的时候(第1次执行setState不走这个代码块的逻辑)
+    // 那这个queue1也就是fiber.updateQueue 在上一轮的偶数次更新中
+    // 被processUpdateQueue把updateQueue给处理了 (比如说可能lastUpdate啥的都是null了)
+    // 而queue2.updateQueue也就是alternate.updateQueue在上一把中是作为current的
+    // 所queue2上仍然保留着上一轮setState的链表状态
+
+    if (!queue1.lastUpdate || queue2.lastUpdate) {
+      // 如果说queue1或者queue2上任何一条链表的lastUpdate是null的话
+      // 那么就把当前这个新的更新任务放到他们的lastUpdate上
+      appendUpdateToQueue(queue1, update)
+      appendUpdateToQueue(queue2, update)
+    } else {
+      // 进入这里说明queue1和queue2两条链表的lastUpdate都不是null
+      appendUpdateToQueue(queue1, update)
+      // 这种情况下只更新一条链表的lastUpdate就好
+      // 因为在上面那个逻辑中 已经让queue1和queue2的lastUpdate都指向同一个引用update了
+      // 比如说在一个点击事件当中 同时执行了俩setState
+      // 然后第一个setState会进入到上面那个if逻辑 会让queue1和queue2都指向update这个引用
+      // 之后当执行第二个setState时 由于两个queue都有lastUpdate了 于是就会进入这个逻辑
+      // 在这个appendUpdateToQueue方法中会执行queue.lastUpdate.next = update
+      // 虽然传入的参数是queue1 不过由于在上一轮中queue1和queue2的lastUpdate在结构上指向一样
+      // 所以就算只执行了一个appendUpdateToQueue(queue1, update)
+      // 也会让queue2.lastUpdate中的next指向改变
+      // 于是就没有必要再调用一次appendUpdateToQueue去改变queue2的lastUpdate.next了
+      // 所以只需要再改变queue2自己本身的lastUpdate属性的指向就可以了
+      queue2.lastUpdate = update
+    }
   }
 }
 /* ---------更新任务队列相关 */
