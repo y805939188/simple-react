@@ -249,10 +249,6 @@ function appendUpdateToQueue(queue, update) {
 }
 
 function enqueueUpdate(fiber, update) {
-  // let queue1 = null
-  // let queue2 = null
-  // let alternate = fiber.alternate // 初次渲染的时候肯定是null
-
   // 这里的fiber.alternate不能叫current
   // 因为在之后的逻辑中 这个fiber.alternate有可能作为workInProgress
   // 也可能作为current  
@@ -260,12 +256,6 @@ function enqueueUpdate(fiber, update) {
   let queue1 = fiber.updateQueue || null
   let queue2 = alternate ? alternate.updateQueue : null
 
-
-  // 初次渲染和第一次setState时都没有alternate
-  // 第一次setState时没有是因为
-  // 初次渲染的时候只有current没有alternate
-  // 但是在之后的逻辑中会将current和alternate的指针对换
-  // 所以第一次setState时候
   if (!alternate) {
     // 初次渲染根节点以及某个组件第一次执行setState时会走到这儿
     queue1 = fiber.updateQueue || (fiber.updateQueue = createUpdateQueue(fiber.memoizedState))
@@ -305,6 +295,8 @@ function enqueueUpdate(fiber, update) {
 
   if (queue2 === null || queue1 === queue2) {
     // 进入这里 说明只有一条
+    // 大部分会进入这里的场景 应该是初次渲染或者某组件第一次执行setState
+
     // 至于queue1等于queue2的情况
     // 我个人感觉 只有在createWorkInProgress中会让俩指向同一个引用
     // 但是如果是组件执行setState而进入这里的话 一般不会存在queue1 === queue2的情况
@@ -348,6 +340,22 @@ function enqueueUpdate(fiber, update) {
       queue2.lastUpdate = update
     }
   }
+
+  // 这个函数主要作用 我感觉吧
+  // 应该就是当初次渲染或者第一次执行setState时
+  // 保证当前组件对应的fiber上的updateQueue有最新的状态和更新
+  // 之后会把这个updateQueue上的状态和更新复制给workInProgress
+  // 在不是初次渲染并且不是第一次执行setState时
+  // 保证当前组件对应的fiber和这个fiber的alterante上的updateQueue都有最新的更新
+  // 不同点在于
+  // 偶数次setState时fiber.updateQueue上可能会保存着上一轮的更新状态
+  // 奇数次setState时alternate.updateQueue上可能会保存着上一轮的更新状态
+  // 没有上一轮状态 只保存着本轮最新update的那个updateQueue
+  // 一定会作为后面render时候的workInProgress
+  // 因为每次createWorkInProgress时一定会把workInProgress的updateQueue
+  // 指向本轮的current 而本轮的current在上一轮是作为workInProgress的
+  // 这个上一轮的workInProgress的updateQueue一定会在processUpdateQueue中被操作处理的
+  // 所以本轮在之后要生成的workInProgress的updateQueue 一定是只保存着本次最新的update的对象
 }
 /* ---------更新任务队列相关 */
 
