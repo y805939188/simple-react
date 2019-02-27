@@ -20,6 +20,7 @@ import {
   HostRoot,
   HostComponent,
   HostText,
+  HostPortal,
   // Mode,
   ContextProvider,
   ContextConsumer
@@ -318,7 +319,7 @@ function enqueueUpdate(fiber, update) {
     // 而queue2.updateQueue也就是alternate.updateQueue在上一把中是作为current的
     // 所queue2上仍然保留着上一轮setState的链表状态
 
-    if (!queue1.lastUpdate || queue2.lastUpdate) {
+    if (queue1.lastUpdate || queue2.lastUpdate) {
       // 如果说queue1或者queue2上任何一条链表的lastUpdate是null的话
       // 那么就把当前这个新的更新任务放到他们的lastUpdate上
       appendUpdateToQueue(queue1, update)
@@ -371,6 +372,9 @@ function scheduleWorkToRoot(fiber, expirationTime) {
   // 如果是setState的情况 这个组件可能已经存在一个优先级了 比如上次异步时候中断的时候
   // 也就是在浏览器非空闲时间又主动触发了一次该组件的更新 此时这个fiber就有可能有个expirationTime
   if (fiber.expirationTime < expirationTime) fiber.expirationTime = expirationTime
+  // 保持alterante同步
+  if (!!alternate && alternate.expirationTime < expirationTime) alternate.expirationTime = expirationTime
+
   // 如果当前这个节点的tag类型就已经是HostRoot了 说明它自己就是个FiberRoot 直接返回它的实例就好
   if (fiber.tag === HostRoot) return fiber.stateNode
   while (parentNode !== null) {
@@ -711,6 +715,7 @@ function renderRoot(root, isYield) {
 }
 
 function createWorkInProgress(current, pendingProps) {
+  debugger
   // 首次渲染时候只会给FiberRoot创建RootFiber 也就是这个current 所以不会有alternate
   // alternate一般是用来连接上一次状态的fiber的
   // 每次渲染或更新都会从FiberRoot开始
@@ -868,6 +873,7 @@ function completeUnitOfWork(workInProgress) {
      这就是完成了一侧 这个时候就要进入这个completeUnitOfWork中
   */
   while(true) {
+    // debugger
     let current = workInProgress.alternate
     let returnFiber = workInProgress.return
     let siblingFiber = workInProgress.sibling
@@ -986,6 +992,7 @@ function completeUnitOfWork(workInProgress) {
 }
 
 function completeWork(workInProgress) {
+  // debugger
   let tag = workInProgress.tag
   if (tag === FunctionComponent) return null
   if (tag === ClassComponent) return null
@@ -1013,8 +1020,27 @@ function completeWork(workInProgress) {
     return null
   }
   if (tag === HostText) {
+    // 在react源码里 如果某个dom元素下只有一个文本类型的子元素
+    // 那在reconcile子节点的时候会直接返回null 也就是说这种情况下
+    // 这个dom节点的fiber没有child 直接对这个dom节点的fiber进行
+    // completeWork 这个时候不会进到这这个tag === HostText里
+    // 而是在初始化dom节点时 给dom设置属性时候判断prop是children
+    // 然后如果是string类型就给他放进去
+    // 当只有一个文本类型的children发生改变的时候 会给这个文本节点的父元素
+    // 一个ContentReset类型的effectTag(16)
+
+    // 如果要是有多个文本类型的子节点的话 那就相当于children是个数组
+    // 就会按照数组的方式处理 reconcileChildrenArray
+    // 然后这样每个文本类型的子节点都有一个自己的fiber 并且都会执行completeWork
+    // 然后就会走到这里 给它创建一个fiber 之后在给它父节点添加属性的时候
+    // 由于children类型是数组 并不是string或number 所以就不会赋值了
+    // 就在实例化父节点时 通过哪个appendAllChild添加进去
     let newText = workInProgress.pendingProps
-    workInProgress.stateNode = document.createTextNode(newText)
+    if (newText && !!workInProgress.stateNode) {
+      workInProgress.stateNode.nodeValue = newText
+    } else {
+      workInProgress.stateNode = document.createTextNode(newText)
+    }
     return null
   }
   // 这里其实在react源码中还有好多其他类型
@@ -1036,6 +1062,7 @@ function createInstance(type, props, workInProgress) {
 }
 
 function appendAllChildren(parentInstance, workInProgress) {
+  // debugger
   // 如果它有child的话
   // 也就是说fiber树的叶子节点不会走这个while循环
   // 该函数主要就是把原生dom的子节点都添加到当前parent下
@@ -1060,7 +1087,7 @@ function appendAllChildren(parentInstance, workInProgress) {
       // 那就把这个child的实例直接append到parent下
       if (tag === HostText) {
         // console.log(node)
-        parentInstance.appendChild(document.createTextNode(node.pendingProps))
+        parentInstance.appendChild(node.stateNode)
       } else {
         parentInstance.appendChild(node.stateNode)
       }
@@ -1130,6 +1157,7 @@ let RootContainerHasAddedEvents = {}
 
 
 function finalizeInitialChildren(instance, type, props) {
+  // debugger
   for (let propKey in props) {
     // 这一步是确保排除原型链上的
     if (!props.hasOwnProperty(propKey)) continue
@@ -1143,11 +1171,13 @@ function finalizeInitialChildren(instance, type, props) {
         domStyle[styleName] = styleValue
       }
     } else if (propKey === 'children') {
-      if (typeof prop === 'string') {
-        instance.textContent = prop
-      }
-      if (typeof prop === 'number') {
-        instance.textContent = String(prop)
+      if (typeof prop[propKey] === 'string') {
+        if (typeof prop === 'string') {
+          instance.textContent = prop
+        }
+        if (typeof prop === 'number') {
+          instance.textContent = String(prop)
+        }
       }
     } else if (temp_events_obj.hasOwnProperty(propKey)) {
       // 进入这里说明props上有个事件相关的
@@ -1197,7 +1227,7 @@ function finalizeInitialChildren(instance, type, props) {
   }
 }
 
-// 我自己瞎鸡儿写的事件代理 react里的和我这个完全不一样
+// 瞎鸡儿写的事件代理 react里的和我这个完全不一样
 // react中的事件系统复杂的一比
 // 我就简单实现一下类似的
 function temp_dispatch_event_fn1(eventName, event) {
@@ -1622,6 +1652,9 @@ function commitAllHostEffects() {
       // 进入这里表示更新
     } else if (primaryEffectTag === Deletion) {
       // 走到这儿表示删除
+      commitDeletion(nextEffect)
+      // 让这个被删除的节点的fiber从fiber树中脱离
+      detachFiber(nextEffect)
     }
     nextEffect = nextEffect.nextEffect
   }
@@ -1717,6 +1750,164 @@ function commitPlacement(finishedWork) {
     // 所以要让当前节点node指向兄弟节点进行下一轮插入操作
     node.sibling.return = node.return
     node = node.sibling
+  }
+}
+
+function commitDeletion(current) {
+  // debugger
+  let node = current
+  let parent = node.return
+  let currentParent = null
+  let currentParentIsContainer = null
+  while (true) {
+    if (parent.tag === HostComponent) {
+      currentParent = parent.stateNode
+      currentParentIsContainer = false
+      break
+    } else if (parent.tag === HostRoot) {
+      currentParent = parent.stateNode.containerInfo
+      currentParentIsContainer = true
+      break
+    }
+  }
+
+  while (true) {
+    if (node.tag === HostComponent || node.tag === HostText) {
+      // 内部是先从一侧子树开始遍历
+      // 每个真实的dom节点都会被执行到 commitUnmount 方法
+      // 然后找兄弟节点 直到把所有的节点都执行了commitUnmount
+      // 如果碰到portal 在执行commitUnmount时候会再次执行commitNestedUnmounts
+      // 就会把portal下的children都执行同样的逻辑
+      commitNestedUnmounts(node)
+      currentParent.removeChild(node.stateNode)
+    } else if (node.tag === HostPortal) {
+      /* 暂时先不处理portal */
+    } else {
+      // 进入这里说明这个节点可能是个function或者class之类的
+      // 对这些节点直接进行ref卸载或者执行卸载的生命周期
+      commitUnmount(node)
+      if (!!node.child) {
+        // 如果还有child 就对它的child进行上面同样的操作
+        node.child.return = node
+        node = node.child
+        continue
+      }
+    }
+    // 如果这个node是传进来的current了
+    // 说明这个current下面的节点都被弄干净了 所以可以退出了
+    // 因为对于删除操作是要一直找子节点的
+    // 每找一个子节点就执行一下提交删除的方法 然后再找兄弟或往上回滚一个
+    // 最终一定会回到传进来的这个current节点
+    if (node === current) return
+    while (!node.sibling) {
+      // 看有无兄弟节点 如果有的话直接让node变为sibling 对sibling进行卸载
+      // 没有的话直接找node的父节点的兄弟节点
+      if (!node.return || node.return === current) return
+      node = node.return
+    }
+    node.sibling.return = node.return
+    node = node.sibling
+  }
+}
+
+function commitNestedUnmounts(root) {
+  /*
+  |            div
+  |             ↓
+  |            img → span → map
+  |             ↓            ↓            
+  |             p          portal
+  |                          ↓
+  |                         div
+
+    commitDeletion中发现传进来的要删除的节点是div
+    是个HostComponent 于是会执行这个commitNestedUnmounts方法
+    之后先对div执行commitUnmount 这个就是用来判断如果是portal进行一些处理
+    如果是class组件就删除ref和执行卸载的声明周期 原生dom节点执行卸载ref等操作
+
+    之后node.tag 不是portal并且有child 就直接用它的child进行下一轮循环
+
+    然后它的child是img 同样上来就执行commitUnmount 之后发现还有child是p
+    对p进行同样的操作 执行commitUnmount 但是到p发现没有child了 于是往下走
+    发现p也没有sibling 于是让node = p.return 回到上一个节点
+    然后把node置为上一个节点sibling兄弟节点 也就是span
+    用span作为下一轮的node 发现span没有child但是又sibling
+    于是把span的sibling也就是map标签作为下一轮node
+
+    同样都执行commitUnmount
+    然后又child 是个portal 作为下一轮的node
+    之后发现是个portal 于是在执行commitUnmount的过程中
+    发现是个portal就会对portal进行commitDeletion
+    也就是调用commitNestedUnmounts的那个外部的方法
+    然后在commitDeletion方法中用portal的child作为下一轮的node进行循环
+    也就是用portal下的那个div进行循环 div是个HostComponent 于是会再执行commitNestedUnmounts
+    之后会跟上面的逻辑一样
+    commitNestedUnmounts传进div作为root 然后发现没有child了 而且node等于root
+    于是return回commitDeletion 对div进行removeChild
+    再然后div没有child 于是找return 发现return就是current 与return回commitUnmount中
+    之后commitUnmount再return回commitNestedUnmounts中 此时这个函数中的node是portal
+    并且child都被整干净了 于是继续往下走 最后如果有兄弟节点的话再按照同样的逻辑处理sibling
+    没有的话最终会找到node === div 于是return会最最开始的commitDeletion
+    然后对这个最最开始的div执行removeChild 这个节点的删除就算是完事儿了
+  */
+  let node = root
+  while (true) {
+    // commitUnmount就是用来卸载ref以及执行对应声明周期的方法
+    commitUnmount(node)
+    if (!!node.child) {
+      // 进到这个方法说明这个传进来的root肯定是一个HostComponent 也就是原生dom节点类型
+      // 如果有child的话找child 对它所有的child都执行commitUnmount操作
+      node.child.return = node
+      node = node.child
+      continue
+    }
+    if (node === root) return
+    while (!node.sibling) {
+      // 没有兄弟节点的话就找他的父节点
+      // 直到找到一个有兄弟节点的父节点或者是找到头了
+      if (!node.return || node.return === root) return
+      node = node.return
+    }
+    // 然后用兄弟节点进行下一次的commitUnmount
+    // 这个就是先找fiber树一侧的子节点
+    // 然后一点一点往上找兄弟节点和父节点的深度优先
+    node.sibling.return = node.return
+    node = node.sibling
+  }
+}
+
+function commitUnmount(node) {
+  // 这个函数用来执行ref的卸载以及生命周期
+  let tag = node.tag
+  if (tag === ClassComponent) {
+    // 先卸载ref 我暂时还没做ref相关的
+    // safelyDetachRef(node)
+    let willUnmountLifeFn = node.stateNode.componentWillUnmount
+    // 然后如果有这个生命周期就执行
+    if (typeof willUnmuntLifeFn === 'function') {
+      willUnmountLifeFn(node, node.stateNode)
+    }
+  } else if (tag === HostComponent) {
+    // 对于原生的dom节点也要卸载ref
+    // safelyDetachRef(node)
+  } else if (tag === HostPortal) {
+    // 对于portal类型的组件 要重新调用这个方法
+    // 这个方法里会找到portal的child 然后对child进行跟之前一样的操作
+    // commitDeletion(node)
+  }
+}
+
+function detachFiber(fiber) {
+  fiber.return = null
+  fiber.child = null
+  fiber.memoizedState = null
+  fiber.updateQueue = null
+  let alternate = fiber.alternate
+  if (!!alternate) {
+    alternate.return = null
+    alternate.child = null
+    alternate.memoizedState = null
+    alternate.updateQueue = null
   }
 }
 
@@ -2289,9 +2480,28 @@ function reconcileChildFibers(workInProgress, newChild, isMount) {
     // 说明newChild是个文本类型的
     return reconcileSingleTextNode(workInProgress, currentFirstChild, String(newChild))
   }
+  // 如果走到这里了 就是说上面那些类型都不符合
+  // 那就有可能是因为返回的是个null
+  // 于是要把现有的child都删掉
+  // 因为新产生的props的children是null
+  // 那就需要把老节点的children删掉
   deleteRemainingChildren(workInProgress, currentFirstChild)
   return null
 }
+
+
+
+
+
+// 提示！接下来要看为啥在setstate时对于text节点没有进入到usefiber方法中
+// 由于美进到usefiber 所以没调用createWorkInProgress
+// 所以导致上一次的firsteffect还存着
+
+
+
+
+
+
 
 function reconcileSingleElement(returnFiber, currentFirstChild, element) {
   let createdFiber = null
@@ -2346,6 +2556,22 @@ function placeSingleChild(newFiber, isMount) {
 }
 
 function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren, isMount) {
+  // 注意！！！！！要处理这里
+  // 如果是deletion的话 要把Deletion(8)标记在current上
+  // 然后workInProgress就是null
+  // 比如
+  /*
+    <div>                                       <div>
+      <span>1</span>     ——————————————→          <span>1</span>
+      <span>2</span>                            </div>
+    </div>
+  */
+  // 这种情况下<span>1</span>的current.sibling 仍然指向<span>2</span>的current
+  // 并且这个<span>2</span>的effectTag是8
+  // 但是<span>1</span>的workInProgress.sibling 就指向null了
+
+  // 因为最后在commit过程中执行commitAllHostEffect时是使用的current作为了effectFiber
+
   // react 源码中在处理数组类型的子节点时 用了一堆特别复杂的算法对比key和index等等东西
   // 我这里先不用他那个大算法了 那个确实比较复杂 等回头我再慢慢加上优化
 
@@ -2427,6 +2653,7 @@ function createFiberFromTypeAndProps(type, key, pendingProps, mode, expirationTi
 }
 
 function reconcileSingleTextNode(returnFiber, currentFirstChild, text) {
+  debugger
   let expirationTime = nextRenderExpirationTime
   if (!!currentFirstChild && currentFirstChild.tag === HostText) {
     // 有currentFirstChild并且tag是HostText的话
@@ -2670,10 +2897,10 @@ class ReactWork {
 const classComponentUpdater = {
   // isMounted: 
   enqueueSetState(instance, payload, callback) {
-    console.log(instance)
+    // console.log(instance)
     console.log(payload)
-    console.log(callback)
-    debugger
+    // console.log(callback)
+    // debugger
 
 
     /*
@@ -2876,7 +3103,7 @@ const classComponentUpdater = {
 
 
 
-
+    // debugger
 
     // 先获取对应的fiber
     let fiber = instance._reactInternalFiber

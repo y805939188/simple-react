@@ -94,8 +94,6 @@ class Ding3 extends React.Component {
     let ding = this.state.ding
     this.setState({
       ding: ++ding
-    }, () => {
-      console.log(111, this)
     })
   }
   handleChange = (e) => {
