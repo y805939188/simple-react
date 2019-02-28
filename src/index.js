@@ -65,7 +65,52 @@ class Ding extends React.Component {
       <div>
         <h2>niubi</h2>
         <h3>zheshih3</h3>
-        <Ding2></Ding2>
+        <Ding2 ding2='zhe shi ding2'></Ding2>
+      </div>
+    )
+  }
+}
+
+class Ding5 extends React.Component {
+  state = {
+    yu: false
+  }
+  handleClickBtn = (e) => {
+    // console.log(e.stopBubble)
+    // e.stopBubble()
+    // debugger
+    this.setState({
+      yu: !this.state.yu
+    })
+  }
+  render() {
+    console.log(666,this.state)
+    return (
+      <button onClick={this.handleClickBtn}>{this.state.yu ? '666' : '999'}</button>
+      // 6666
+    )
+  }
+}
+
+
+// 要改的bug 组件嵌套时子组件执行setState会有毛病
+
+
+class Ding4 extends React.Component {
+  // state = {
+  //   ding: false
+  // }
+  // handleClick = () => {
+  //   this.setState({
+  //     ding: !this.state.ding
+  //   })
+  // }
+  render() {
+    return (
+      <div>
+        {/* this is Ding4 {this.state.ding ? 1111 : 2222} */}
+        {/* <button onClick={this.handleClick}>click</button> */}
+        <Ding5></Ding5>
       </div>
     )
   }
@@ -74,7 +119,8 @@ class Ding extends React.Component {
 class Ding3 extends React.Component {
   state = {
     ding: 1,
-    ding2: 666
+    ding2: 666,
+    ding3: true
   }
   handleClick1 = (event) => {
     console.log(event)
@@ -102,10 +148,35 @@ class Ding3 extends React.Component {
     //   ding: 9999
     // })
   }
+  handleClick4 = () => {
+    // debugger
+    this.setState({
+      ding3: !this.state.ding3
+    })
+  }
+  renderArrayFn = () => {
+    if (this.state.ding3) {
+      return [
+        <h1>h1 {this.state.ding2}</h1>,
+        <h2>{[1, 2]}</h2>, 
+        <h3>h3</h3>
+      ]
+    } else {
+      return [
+        <h2>h2</h2>,
+        <h1>h1</h1>,
+        // <h1>h1</h1>,
+        // <h2>h2</h2>,
+        // <h3>h3</h3>
+      ]
+    }
+  }
   render () {
     return (
-      <div onClick={this.handleClick3.bind(this, 222)}>
-        clickme {this.state.ding}
+      <div onClick={this.handleClick4}>
+        <Ding4></Ding4>
+        {/* {this.renderArrayFn()} */}
+        {/* clickme {this.state.ding} */}
         {/* 8888899
         <input type="text" onKeyDown={this.handleChange}/>
         <h1 onClick={this.handleClick2}>{this.props.ding1}</h1>

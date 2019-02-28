@@ -715,7 +715,6 @@ function renderRoot(root, isYield) {
 }
 
 function createWorkInProgress(current, pendingProps) {
-  debugger
   // 首次渲染时候只会给FiberRoot创建RootFiber 也就是这个current 所以不会有alternate
   // alternate一般是用来连接上一次状态的fiber的
   // 每次渲染或更新都会从FiberRoot开始
@@ -873,7 +872,6 @@ function completeUnitOfWork(workInProgress) {
      这就是完成了一侧 这个时候就要进入这个completeUnitOfWork中
   */
   while(true) {
-    // debugger
     let current = workInProgress.alternate
     let returnFiber = workInProgress.return
     let siblingFiber = workInProgress.sibling
@@ -992,7 +990,6 @@ function completeUnitOfWork(workInProgress) {
 }
 
 function completeWork(workInProgress) {
-  // debugger
   let tag = workInProgress.tag
   if (tag === FunctionComponent) return null
   if (tag === ClassComponent) return null
@@ -1016,6 +1013,8 @@ function completeWork(workInProgress) {
       // console.log(type)
       finalizeInitialChildren(instance, type, props)
       workInProgress.stateNode = instance
+    } else {
+      diffAndUpdateHostComponent
     }
     return null
   }
@@ -1050,6 +1049,13 @@ function completeWork(workInProgress) {
   return null
 }
 
+function diffAndUpdateHostComponent() {
+  // 当某个原生dom要进行更新时 会进入completeWork中的
+  // HostComponet 分支中的updateHostComponent$1方法
+  // 里头有什么perpareUpdate
+  // 明天该做这块了
+}
+
 function createInstance(type, props, workInProgress) {
   let children = props.children
   if (typeof children === 'string' || typeof children === 'number') {
@@ -1062,7 +1068,6 @@ function createInstance(type, props, workInProgress) {
 }
 
 function appendAllChildren(parentInstance, workInProgress) {
-  // debugger
   // 如果它有child的话
   // 也就是说fiber树的叶子节点不会走这个while循环
   // 该函数主要就是把原生dom的子节点都添加到当前parent下
@@ -1157,7 +1162,6 @@ let RootContainerHasAddedEvents = {}
 
 
 function finalizeInitialChildren(instance, type, props) {
-  // debugger
   for (let propKey in props) {
     // 这一步是确保排除原型链上的
     if (!props.hasOwnProperty(propKey)) continue
@@ -1171,7 +1175,7 @@ function finalizeInitialChildren(instance, type, props) {
         domStyle[styleName] = styleValue
       }
     } else if (propKey === 'children') {
-      if (typeof prop[propKey] === 'string') {
+      if (typeof props[propKey] === 'string') {
         if (typeof prop === 'string') {
           instance.textContent = prop
         }
@@ -1754,7 +1758,6 @@ function commitPlacement(finishedWork) {
 }
 
 function commitDeletion(current) {
-  // debugger
   let node = current
   let parent = node.return
   let currentParent = null
@@ -2192,7 +2195,7 @@ function applyDerivedStateFromProps(workInProgress, getDerivedStateFromProps, ne
 function updateClassInstance(workInProgress, newProps) {
   let instance = workInProgress.stateNode
   let oldState = workInProgress.memoizedState
-  let newState = null
+  let newState = oldState
   let updateQueue = workInProgress.updateQueue
   if (!!updateQueue) {
     processUpdateQueue(workInProgress, instance)
@@ -2267,10 +2270,10 @@ function updateHostComponent(workInProgress) {
   // let tag = workInProgress.type // 获取元素的名称 比如一个 'div'
   let nextProps = workInProgress.pendingProps // 获取属性 就是ReactElement方法的第二个参数
   let nextChildren = nextProps.children
-  let type = workInProgress.type
-  // if (typeof nextChildren === 'string' || typeof nextChildren === 'number') {
-  //   nextChildren = null
-  // }
+  // let type = workInProgress.type
+  if (typeof nextChildren === 'string' || typeof nextChildren === 'number') {
+    nextChildren = null
+  }
   // let prevProps = null
   // let current = workInProgress.alternate
   // if (!!current) prevProps = current.memoizedProps
@@ -2556,6 +2559,7 @@ function placeSingleChild(newFiber, isMount) {
 }
 
 function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren, isMount) {
+  let expirationTime = nextRenderExpirationTime
   // 注意！！！！！要处理这里
   // 如果是deletion的话 要把Deletion(8)标记在current上
   // 然后workInProgress就是null
@@ -2570,35 +2574,276 @@ function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren, isM
   // 并且这个<span>2</span>的effectTag是8
   // 但是<span>1</span>的workInProgress.sibling 就指向null了
 
-  // 因为最后在commit过程中执行commitAllHostEffect时是使用的current作为了effectFiber
+  // 因为如果这个节点要被Deletion的话那就会在这个函数中执行deleteChild
+  // 这个deleteChild会直接把这个要被删除的节点作为returnFiber的nextEffect
 
-  // react 源码中在处理数组类型的子节点时 用了一堆特别复杂的算法对比key和index等等东西
-  // 我这里先不用他那个大算法了 那个确实比较复杂 等回头我再慢慢加上优化
+  // 再比如
+  /*
+    <div>                                       <div>
+      null                                        <span>0</span>
+      <span>1</span>                              <span>1</span>
+      <span>2</span>     ——————————————→          <span>2</span>
+      <span>3</span>                            </div>
+    </div>
+  */
+  // 像这样新Placement一个<span>0</span> 然后Deletion一个<span>3</span>
+  // 最终生成的新的fiber树的结构就是
+  //
+  //   div(lastEffect: span3)
+  //    ↓
+  //  span0(effectTag: Placement) → span1 → span2
 
-  let returnFiberLastChild = null
-  if (!!currentFirstChild) {
-    // 如果有子节点的话 就直接都干掉
-    // 不过react里进行了特别屌的复杂度是 O(n) 的优化
-    returnFiberLastChild = deleteRemainingChildren(returnFiber, currentFirstChild)
-  }
-  // 根据本次的newChildren生成新的fiber
-  
-  let firstChild = returnFiberLastChild || null
-  let prevFiber = firstChild
-  for (let i = 0; i < newChildren.length; i++) {
-    let newFiber = createChild(returnFiber, newChildren[i])
-    if (!newFiber) continue
-    placeChild(newFiber, i, isMount)
 
-    if (firstChild === null) {
-      firstChild = newFiber
+  let resultingFirstChild = null
+  let previousNewFiber = null
+  let oldFiber = currentFirstChild
+  let lastPlacedIndex = 0
+  let newIdx = 0
+  let nextOldFiber = null
+  // 初次渲染直接跳过这里
+  for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
+    if (oldFiber.index > newIdx) {
+      // 进入这里 可能说明上一次中 有的节点是null
+      // 比如
+      /*
+        <div>                          <div>
+          null                           <h1></h1>
+          null                           <h2></h2>
+          <h1></h1>     ——————————→      <h3></h3>
+          <h2></h2>                      <h4></h4>
+          <h3></h3>                      <h5></h5> 
+        </div>                         </div>
+      */
+      // 这种情况上一轮的h1到h3的index分别是 0 ~ 2 但是新的fiber中h1到h3的index要从0 ~ 4
+      nextOldFiber = oldFiber
+      oldFiber = null
     } else {
-      prevFiber.sibling = newFiber
+      nextOldFiber = oldFiber.sibling
     }
-    prevFiber = newFiber
+
+    // 这里返回的newFiber有三种情况
+    // 第一种是返回null
+    // 说明这个节点新旧两次key值不一样
+    // 或新旧两次一次是文本一次不是文本或一次是数组一次不是数组
+    // 第二种情况就是返回一个可以复用的fiber
+    // 这说明新旧俩节点的fiber一样并且类型也一样
+    // 第三种情况就是返回一个新的fiber
+    // 新的fiber说明前后两次的key一样但是类型改变了
+    // 有可能是新插入了或真的直接就被改变类型了
+    // 如果在内部调用了create之类的创建新fiber的方法
+    // 表示不能复用之前的fiber
+    // 而这个新创建的fiber上是没有alternate的
+    const newFiber = updateSlot(returnFiber, oldFiber, newChildren[newIdx], expirationTime)
+    if (newFiber === null) {
+      // 遍历新的children数组 直到找到第一个key不相同的节点
+      // 如果上一轮中对应的节点或者key是null 并且本次新节点也没有key 那么不进入这里 因为null===null
+      // 但如果上一轮中对应的节点或者key是null 但本次新节点有key 那么就进入这里
+      if (oldFiber === null) {
+        // 让oldFiber这个变量等于当前循环到的child对应的老child
+        oldFiber = nextOldFiber
+      }
+      // 当找到第一个不能复用的节点的时候就跳出循环
+      break
+    }
+    if (!isMount) {
+      // 进入这里说明不是初次渲染 Mount时执行Childxxx时传的是false
+      if (oldFiber && newFiber.alternate === null) {
+        // 进入这里说明没有复用 新旧俩节点前后两次的key可能一样但是类型改变了
+        // 有可能是新插入了或真的直接就被改变类型了
+        // 新创建的create的fiber没有alternate
+        // 所以旧的节点已经失效了 要把它删除
+        deleteChild(returnFiber, oldFiber)
+      }
+    }
+
+    // 这个placeChild就是
+    // 如果需要把这个新的节点放置到dom上
+    // 判断这个节点是否需要被放置或者是插入或是移动
+    // 给newFiber.effectTag 赋值成 Placement
+    lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx)
+    if (previousNewFiber === null) {
+      resultingFirstChild = newFiber
+    } else {
+      previousNewFiber.sibling = newFiber
+    }
+    previousNewFiber = newFiber
+    oldFiber = nextOldFiber
   }
-  // return firstChild
-  return currentFirstChild ? currentFirstChild : firstChild
+
+  // 初次渲染也直接跳过这里
+  if (newIdx === newChildren.length) {
+    // 如果newIdx等于了这回新数组的长度
+    // 说明新数组中全部内容已经都被创建好了fiber对象
+    // 新数组已经操作完成了
+    // 如果这个时候老数组还有东西的话 就要被删除掉
+    // 最后返回第一个子节点
+    deleteRemainingChildren(returnFiber, oldFiber)
+    return resultingFirstChild
+  }
+
+  // 初次渲染也会进入这里
+  if (oldFiber === null) {
+    // 走到这里就说明老的节点已经被复用完了或初次渲染
+    // 但是仍然还存在新的节点没有被创建fiber
+    for (; newIdx < newChildren.length; newIdx++) {
+      // 这种情况下就对所有剩下的新的节点创建一个新的fiber
+      const newFiber = createChild(
+        returnFiber,
+        newChildren[newIdx],
+        expirationTime,
+      );
+      if (!newFiber) {
+        continue
+      }
+      // 新节点的fiber被创建好了之后要给effectTag上标为Placement
+      // 初次渲染的时候 根据这个for循环和newIdx 从0依次按顺序给newFiber一个index 
+      lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+      // 接下来让这些节点形成一条链表
+      if (previousNewFiber === null) {
+        resultingFirstChild = newFiber
+      } else {
+        previousNewFiber.sibling = newFiber
+      }
+      previousNewFiber = newFiber
+    }
+    return resultingFirstChild
+  }
+  // 走到这儿的话可能是新的子节点们的长度小于旧的子节点长度
+  // 或者是旧有的节点的顺序发生了变化
+  // 这个函数主要做的就是给剩下的旧的fiber们做了一个map对象
+  // 如果剩下的fiber们有key 就用key做键 对应的fiber做值
+  // 如果某个fiber没有key就用它的index做键
+  const existingChildren = mapRemainingChildren(returnFiber, oldFiber)
+  // 然后这里是根据上面那个map来方便地查找可以复用的fiber
+  // 就是先找map中对应的key有没有 没有就找index 也没有就直接创建
+  // 反正最后找没找到都要创建
+  // 每当找到一个可以复用的fiber节点 就把它从map中删除
+  for (; newIdx < newChildren.length; newIdx++) {
+    const newFiber = updateFromMap(
+      existingChildren,
+      returnFiber,
+      newIdx,
+      newChildren[newIdx],
+      expirationTime,
+    );
+    if (newFiber) {
+      if (!isMount) {
+        if (newFiber.alternate !== null) {
+          // 进到这里说明复用了旧的节点
+          // 所以旧的那个fiber已经不能再给别人用了 于是要从map中删除
+          existingChildren.delete(
+            newFiber.key === null ? newIdx : newFiber.key,
+          )
+        }
+      }
+      lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx, isMount)
+      if (previousNewFiber === null) {
+        resultingFirstChild = newFiber
+      } else {
+        previousNewFiber.sibling = newFiber
+      }
+      previousNewFiber = newFiber
+    }
+  }
+
+  // 最后当把所有的可以复用的都找干净了之后就把map里的都干掉
+  if (!isMount) {
+    existingChildren.forEach(child => deleteChild(returnFiber, child))
+  }
+
+  return resultingFirstChild
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // let returnFiberLastChild = null
+  // if (!!currentFirstChild) {
+  //   // 如果有子节点的话 就直接都干掉
+  //   // 不过react里进行了特别屌的复杂度是 O(n) 的优化
+  //   returnFiberLastChild = deleteRemainingChildren(returnFiber, currentFirstChild)
+  // }
+  // // 根据本次的newChildren生成新的fiber
+  
+  // let firstChild = returnFiberLastChild || null
+  // let prevFiber = firstChild
+  // for (let i = 0; i < newChildren.length; i++) {
+  //   let newFiber = createChild(returnFiber, newChildren[i])
+  //   if (!newFiber) continue
+  //   placeChild(newFiber, i, isMount)
+
+  //   if (firstChild === null) {
+  //     firstChild = newFiber
+  //   } else {
+  //     prevFiber.sibling = newFiber
+  //   }
+  //   prevFiber = newFiber
+  // }
+  // // return firstChild
+  // return currentFirstChild ? currentFirstChild : firstChild
+}
+
+function updateSlot(returnFiber, oldFiber, newChild, expirationTime) {
+  const key = oldFiber !== null ? oldFiber.key : null
+  if (typeof newChild === 'string' || typeof newChild === 'number') {
+    // 这里就是说如果之前那个旧的节点有key
+    // 那就直接返回null 说明这个旧节点没法复用
+    // 因为本次新节点是个文本类型 文本类型没有key
+    if (key !== null) {
+      return null
+    }
+    // 走到这里说明上次旧的节点也是文本类型
+    // 或!没写key属性
+    // 然后updateTextNode会判断如果上次节点也是文本类型
+    // 就更新复用
+    // 如果不是文本类型就创建一个新的fiber
+    return updateTextNode(returnFiber, oldFiber, '' + newChild, expirationTime)
+  }
+
+  if (typeof newChild === 'object' && newChild !== null) {
+    switch (newChild.$$typeof) {
+      case Symbol.for('react.element'): {
+        // key相等时才会去考虑复用
+        // key值不同的时候直接返回一个null
+        if (newChild.key === key) {
+          // 这里也是判断如果新旧两个类型一样
+          // 就复用 不一样就create
+          return updateElement(returnFiber, oldFiber, newChild, expirationTime)
+        } else {
+          return null
+        }
+      }
+    }
+  }
+  return null
 }
 
 function createChild(returnFiber, newChild) {
@@ -2616,11 +2861,110 @@ function createChild(returnFiber, newChild) {
   return createdFiber
 }
 
-function placeChild(newFiber, newIndex, isMount) {
+function placeChild(newFiber, lastPlacedIndex, newIndex, isMount) {
   newFiber.index = newIndex
-  if (isMount) return
-  newFiber.effectTag = Placement
+  if (isMount) {
+    // 初次渲染传会进这里
+    return lastPlacedIndex
+  }
+  // 有current的话 说明他的current应该已经被挂载过了
+  // 没有的话说明这个fiber应该是新创建的 本次要让它Placement
+  const current = newFiber.alternate
+  if (current !== null) {
+    const oldIndex = current.index
+    if (oldIndex < lastPlacedIndex) {
+      // 比如说前面已经有俩要被新插入的节点了
+      // 这个lastPlacedIndex是2 但是当前遍历到的这个节点
+      // 的oldIndex是1的话 那当前这个节点应该被放到3的位置
+      newFiber.effectTag = Placement
+      return lastPlacedIndex
+    } else {
+      return oldIndex
+    }
+  } else {
+    // 进入这里说明是一个新创建的fiber
+    // 要把这个新的fiber放置到dom上
+    newFiber.effectTag = Placement
+    return lastPlacedIndex
+  }
 }
+
+function updateTextNode(returnFiber, current, textContent, expirationTime) {
+  if (current === null || current.tag !== HostText) {
+    const created = createFiberFromText(textContent, returnFiber.mode, expirationTime)
+    created.return = returnFiber
+    return created
+  } else {
+    const existing = useFiber(current, textContent, expirationTime)
+    existing.return = returnFiber
+    return existing
+  }
+}
+
+function updateElement(returnFiber, current, element, expirationTime) {
+  // 这里是判断新旧两个节点的类型是否一样
+  // 使用elementType和type是否相等来判断
+  // elementType 是resolved之后的type类型
+  // type 是resolved之前的type类型
+  // 大部分情况下俩值是一样的
+  // 不过像react中的lazyComponent组件 前后的elementType和type就不一样
+  // 所以这里用这俩是否相等判断
+  // 当然如果没有lazy加载的功能的话 直接用新旧type对比也成
+  if (current !== null && current.elementType === element.type) {
+    const existing = useFiber(current, element.props, expirationTime)
+    // existing.ref = coerceRef(returnFiber, current, element)
+    existing.return = returnFiber
+    return existing
+  } else {
+    // Insert
+    const created = createFiberFromElement(element, returnFiber.mode, expirationTime)
+    // created.ref = coerceRef(returnFiber, current, element)
+    created.return = returnFiber
+    return created
+  }
+}
+
+function updateFromMap(existingChildren, returnFiber, newIdx, newChild, expirationTime) {
+  if (typeof newChild === 'string' || typeof newChild === 'number') {
+    const matchedFiber = existingChildren.get(newIdx) || null
+    return updateTextNode(returnFiber, matchedFiber, '' + newChild, expirationTime)
+  }
+  if (typeof newChild === 'object' && newChild !== null) {
+    switch (newChild.$$typeof) {
+      case REACT_ELEMENT_TYPE: {
+        const matchedFiber =
+          existingChildren.get(newChild.key === null ? newIdx : newChild.key) || null
+        return updateElement(
+          returnFiber,
+          matchedFiber,
+          newChild,
+          expirationTime,
+        )
+      }
+    }
+  }
+  return null
+}
+
+function mapRemainingChildren(returnFiber, currentFirstChild) {
+  const existingChildren = new Map()
+  let existingChild = currentFirstChild
+  while (existingChild !== null) {
+    if (existingChild.key !== null) {
+      existingChildren.set(existingChild.key, existingChild)
+    } else {
+      existingChildren.set(existingChild.index, existingChild)
+    }
+    existingChild = existingChild.sibling
+  }
+  return existingChildren
+}
+
+// function placeChild(newFiber, newIndex, isMount) {
+//   newFiber.index = newIndex
+//   if (isMount) return
+//   newFiber.effectTag = Placement
+// }
 
 function createFiberFromElement(element, mode) {
   let expirationTime = nextRenderExpirationTime
@@ -2653,7 +2997,6 @@ function createFiberFromTypeAndProps(type, key, pendingProps, mode, expirationTi
 }
 
 function reconcileSingleTextNode(returnFiber, currentFirstChild, text) {
-  debugger
   let expirationTime = nextRenderExpirationTime
   if (!!currentFirstChild && currentFirstChild.tag === HostText) {
     // 有currentFirstChild并且tag是HostText的话
@@ -2897,12 +3240,7 @@ class ReactWork {
 const classComponentUpdater = {
   // isMounted: 
   enqueueSetState(instance, payload, callback) {
-    // console.log(instance)
-    console.log(payload)
-    // console.log(callback)
-    // debugger
-
-
+    debugger
     /*
       执行setState时
       基数次更新时(1, 3, 5, ...)
@@ -2914,9 +3252,6 @@ const classComponentUpdater = {
 
 
     */
-
-
-
 
     /*
       <Ding>
@@ -3100,11 +3435,6 @@ const classComponentUpdater = {
     |
     |
     */
-
-
-
-    // debugger
-
     // 先获取对应的fiber
     let fiber = instance._reactInternalFiber
     let currentTime = requestCurrentTime()
