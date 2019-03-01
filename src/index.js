@@ -1,79 +1,7 @@
 import React from './my-react/react/react'
 import ReactDOM from './my-react/react-dom/react-dom'
 
-// function Ding5(props) {
-//   return (
-//     <div>{props.liubi}</div>
-//   )
-// }
-
-
-// class Ding4 extends React.Component {
-//   state = {
-//     ding4: 1
-//   }
-
-//   handleClick2 = () => {
-//     let ding4 = this.state.ding4
-//     this.setState({
-//       ding4: ++ding4
-//     })
-//   }
-//   render() {
-//     return (
-//       <div>
-//         <div onClick={this.handleClick2}>{this.state.ding4}</div>
-//         <Ding5 liubi={'liubi'}></Ding5>
-//       </div>
-//     )
-//   }
-// }
-
-// class Ding2 extends React.Component {
-//   state = {
-//     ding3: false
-//   }
-//   handleClickBtn = () => {
-//     this.setState({
-//       ding3: !this.state.ding3
-//     })
-//   }
-//   render() {
-//     return (
-//       <div style={{color: 'red', width: '100px', height: '100px', backgroundColor: '#000'}}>
-//         {this.props.hehe}
-//         <button onClick={this.handleClickBtn}>
-//           {this.state.ding3 ? '222' : '333'}
-//         </button>
-//         <Ding4></Ding4>
-//       </div>
-//     )
-//   }
-// }
-
-// class Ding3 extends React.Component {
-//   state = {
-//     ding: true,
-//     ding2: 666
-//   }
-//   handleClick1 = (event) => {
-//     this.setState({
-//       ding: !this.state.ding
-//     })
-//   }
-//   render () {
-//     return (
-//       <div>
-//         {this.state.ding ? '666' : '999'}
-//         {/* <button onClick={this.handleClick1}>点我</button> */}
-//         <Ding2 hehe={this.state.ding2}></Ding2>
-//       </div>
-//     )
-//   }
-// }
-
 let Context = React.createContext({ding: 666})
-// console.log(Context)
 
 let Provider = Context.Provider
 let Consumer = Context.Consumer
@@ -111,6 +39,7 @@ class Ding5 extends React.Component {
     )
   }
 }
+
 class Ding4 extends React.Component {
   state = {ding: 1}
   handleClickBtn = () => {
@@ -119,17 +48,45 @@ class Ding4 extends React.Component {
       ding: ++ding
     })
   }
+  componentDidMount() {
+    console.log(this.btnRef)
+  }
   render() {
     return (
       <Provider value={{ding: this.state.ding}}>
         <Ding5></Ding5>
-        <button onClick={this.handleClickBtn}>click me</button>
+        <button ref={(ele) => {this.btnRef = ele}} onClick={this.handleClickBtn}>click me</button>
       </Provider>
     )
   }
 }
+
+class Ding7 extends React.Component {
+  // ref两种用法
+  // 其实还一种直接写string的
+  // 不过那种做起来太费事儿
+  constructor(props) {
+    super(props)
+    this.ref3 = React.createRef()
+  }
+
+  componentDidMount() {
+    console.log(this.ref2)
+    console.log(this.ref3)
+  }
+  render() {
+    return (
+      <div>
+        <h2 ref={ele => (this.ref2 = ele)}>h2</h2>
+        <h3 ref={this.ref3}>h3</h3>
+      </div>
+    )
+  }
+}
+
 ReactDOM.render(
   // <Ding3></Ding3>,
   <Ding4></Ding4>,
+  // <Ding7></Ding7>,
   document.querySelector('#app')
 )

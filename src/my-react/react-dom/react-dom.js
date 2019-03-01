@@ -3,73 +3,62 @@ import {
   ConcurrentMode
 } from './ReactTypeOfMode'
 import {
-  NoEffect,
-  Placement,
-  Update,
-  PlacementAndUpdate,
-  ContentReset,
-  Deletion,
-  Callback,
-  Snapshot
+  NoEffect, // 表示不需要更新
+  Placement, // 表示需要插入或者新增
+  Update, // 表示要更新
+  PlacementAndUpdate, // 又要更新又要插入
+  ContentReset, // 文本内容重置
+  Deletion, // 删除
+  Callback, // 有回调
+  Snapshot, // 有新周期
+  Ref // 有新ref
 } from './ReactSideEffectTag'
 import {
-  FunctionComponent,
-  ClassComponent,
-  IndeterminateComponent,
-  Fragment,
-  HostRoot,
-  HostComponent,
-  HostText,
-  HostPortal,
-  // Mode,
-  ContextProvider,
-  ContextConsumer
+  FunctionComponent, // 函数类型
+  ClassComponent, // class类型
+  IndeterminateComponent, // 未知类型
+  Fragment, // framgment类型 还没做呢
+  HostRoot, // Root类型
+  HostComponent, // 原生节点类型
+  HostText, // 文本类型
+  HostPortal, // portal类型 就是可以往别处插的类型
+  // Mode, // 这个不知道
+  ContextProvider, // context的provider
+  ContextConsumer // context的consumer
 } from './ReactWorkTags'
 import {
-  NoWork,
-  Never,
-  Sync,
-  msToExpirationTime
+  NoWork, // 这个表示没有任务
+  Never, // 这个表示永远不会被更新到
+  Sync, // 这个表示优先级最大 同步
+  msToExpirationTime // 这个是用来换算优先级和时间 的
 } from './ReactFiberExpirationTime'
 import {
   UpdateState // setState和ReactDOM.render的时候都是这个类型
 } from './ReactUpdateQueue'
 
-let nextUnitOfWork = null
-let nextRoot = null
-let nextEffect = null
+let nextUnitOfWork = null // 表示下一个要被调度的fiber
+let nextRoot = null // 表示下一个有更新的root
+let nextEffect = null // 表示下一个有要被commit的fiber
 
-let noTimeout = -1 // 这个没啥b用 就是单纯告诉你不延时
-
-let firstScheduledRoot = null
-let lastScheduledRoot = null
-
-// let callbackExpirationTime = NoWork
-// let callbackID = void 0
-let isRendering = false
-let nextFlushedRoot = null
-let nextFlushedExpirationTime = NoWork
-// let lowestPriorityPendingInteractiveExpirationTime = NoWork
-// let hasUnhandledError = false
-// let unhandledError = null
+let firstScheduledRoot = null // 第一个要被调度的Root
+let lastScheduledRoot = null // 最后一个要被调度的Root 和上面那个是一条链表
+let isRendering = false // 表示正在render阶段 也就是创建或更新fiber树阶段
+let nextFlushedRoot = null // 表示下一个要被执行render的fiber
+let nextFlushedExpirationTime = NoWork // 表示下一个要被执行render的foot的expirationTime
+let isWorking = false // 表示正在工作阶段 render阶段和commit阶段都是working阶段
+let isCommitting = false // 表示是否是提交极端
+let nextRenderExpirationTime = NoWork // 表示当前正在执行render的过程中 可以允许执行render的最大时间 在这个时间内都可以中断 超过了就不能断了
 
 // 这几个是控制是否批量更新的全局变量
 let isBatchingUpdates = false
 let isUnbatchingUpdates = false
 let isBatchingInteractiveUpdates = false
-
-// let completedBatches = null
-
 // 这几个是用来记录react应用最初执行时间以及计算currentTime的
 let originalStartTimeMs = performance.now()
 let currentRendererTime = msToExpirationTime(originalStartTimeMs)
 let currentSchedulerTime = currentRendererTime
-
 let expirationContext = NoWork
 
-let isWorking = false
-let isCommitting = false
-let nextRenderExpirationTime = NoWork
 
 /* ---------计算时间相关 */
 function requestCurrentTime() {
@@ -163,28 +152,22 @@ class FiberNode {
     this.child = null // 该fiber的第一个子fiber
     this.sibling = null // 紧邻着该fiber的兄弟fiber
     this.index = 0 // 该fiber的index
-  
-    // this.ref = null
-  
+    this.ref = null // 用来获取真实dom实例的
     this.pendingProps = pendingProps // 该fiber的新属性
     this.memoizedProps = null // 当前fiber的旧属性
     this.updateQueue = null // 该fiber的更新队列 这个队列上会存放一个或多个update
     this.memoizedState = null // 当前fiber的自身状态
     this.firstContextDependency = null
-  
     this.mode = mode
-  
     // Effects 0b000000000000
     this.effectTag = NoEffect // 表示该fiber的更新类型 一般有放置、替换、删除这三个
     this.nextEffect = null // 下一个effect的fiber 表示下一个更新
-  
+
     // 这两个属性是一条链表 从first指向last
     this.firstEffect = null // 第一个effect的fiber
     this.lastEffect = null // 最后一个effect的fiber
-  
     this.expirationTime = NoWork // 当前fiber的更新优先级
     this.childExpirationTime = NoWork // 当前fiber的子fiber中的优先级最高
-  
     this.alternate = null // 用来连接上一个状态的当前fiber
   }
 }
@@ -207,14 +190,186 @@ function unbatchedUpdates(fn, a) {
   // 初次渲染会直接走到这里 这个函数就是 root.render
   return fn(a);
 }
-/* ---------react提供的API相关 */
 
 
-function updateContainerAtExpirationTime(element, container, parentComponent, expirationTime, callback) {
-  let current = container.current
-  // 这里有一些获取context的方法
+function interactiveUpdates(fn, eventName, event) {
+  // isBatchingInteractiveUpdates 初始是false
+  // 只有在这个函数中才会改变isBatchingInteractiveUpdates
+  if (isBatchingInteractiveUpdates) {
+    return fn(eventName, event)
+  }
+  // 记录下当前的isBatchingInteractiveUpdates和isBatchingUpdates的值
+  let previousIsBatchingInteractiveUpdates = isBatchingInteractiveUpdates
+  let previousIsBatchingUpdates = isBatchingUpdates
+  // 都置为true 用来在后面执行setState时候先不render和commit
+  isBatchingInteractiveUpdates = true
+  isBatchingUpdates = true
+  try {
+    return fn(eventName, event)
+  } finally {
+    isBatchingInteractiveUpdates = previousIsBatchingInteractiveUpdates
+    isBatchingUpdates = previousIsBatchingUpdates
+    if (!isBatchingUpdates && !isRendering) {
+      performSyncWork()
+    }
+  }
 }
 
+/* ---------react提供的API相关 */
+
+/* ---------事件代理相关 */
+
+// 我自己瞎写的事件代理 react里的和我这个完全不一样
+// react中的事件系统复杂的一比
+// 我就简单实现一下类似的
+let temp_events_obj = {
+  onClick: {},
+  onChange: {},
+  onBlur: {},
+  onFocus: {},
+  onInput: {},
+  onKeyDown: {},
+  onKeyUp: {},
+  onTouchEnd: {},
+  onTouchStart: {},
+  onTouchCancel: {},
+  // 等等...
+  // 不止这些...
+}
+
+let RootContainerHasAddedEvents = {}
+
+
+function ensureListeningTo(instance, type, propKey) {
+  let rootContainer = null
+  let RootFiber = instance.__reactInternalInstance
+  while (RootFiber.tag !== HostRoot) {
+    RootFiber = RootFiber.return
+  }
+  rootContainer = RootFiber.stateNode.containerInfo
+  if (!RootContainerHasAddedEvents.hasOwnProperty(propKey)) {
+    RootContainerHasAddedEvents[propKey] = true
+    let eventName = propKey.slice(2).toLowerCase()
+    let eventName2 = ''
+    if (eventName === 'click') {
+      eventName2 = eventName
+    } else if (eventName === 'change') {
+      /*
+        input可能有这么多种类型
+        0: "blur"
+        1: "change"
+        2: "click"
+        3: "focus"
+        4: "input"
+        5: "keydown"
+        6: "keyup"
+        7: "selectionchange"
+      */
+      if (type === 'input' && instance.type === 'text') {
+        eventName2 = 'input'
+      } else if (type === 'input' && instance.type === 'file') {
+        eventName2 = eventName
+      } else if (type === 'select') {
+        eventName2 = eventName
+      } else if (type === 'textare') {
+        eventName2 === 'input'
+      }
+    } else {
+      eventName2 = eventName
+    }
+    if (type === 'input') {
+      rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn2, propKey), false)
+    } else {
+      rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn1, propKey), false)
+    }
+  }
+}
+
+function temp_dispatch_event_fn1(eventName, event) {
+  event = event || window.event
+  let target = event.target || event.srcElement
+  let nextFiber = target.__reactInternalInstance
+  let temp_parent_arr = []
+  let rootContainer = null
+  while (true) {
+    if (nextFiber.tag === HostRoot) {
+      rootContainer = nextFiber.stateNode.containerInfo
+      break
+    }
+    if (nextFiber.tag === HostComponent || nextFiber.tag === HostText) {
+      let props = nextFiber.pendingProps
+      if (props.hasOwnProperty(eventName)) {
+        temp_parent_arr.push(props[eventName])
+      }
+    }
+    nextFiber = nextFiber.return
+  }
+
+  let len = temp_parent_arr.length
+  let _event = {
+    nativeEvent: event
+  }
+  Object.defineProperty(_event, 'target', {
+    get() {
+      return _event.nativeEvent.target
+    }
+  })
+  let shouldStopBubble = false
+  let shouldStopBubbleFn = function () {
+    shouldStopBubble = true
+  }
+  _event.stopBubble = shouldStopBubbleFn
+  for (let i = 0; i < len; i++) {
+    temp_parent_arr[i](_event)
+    if (shouldStopBubble) {
+      break
+    }
+  }
+}
+
+function temp_dispatch_event_fn2(eventName, event) {
+  event = event || window.event
+  let target = event.target || event.srcElement
+  let nextFiber = target.__reactInternalInstance
+  let temp_parent_arr = []
+  let rootContainer = null
+  while (true) {
+    if (nextFiber.tag === HostRoot) {
+      rootContainer = nextFiber.stateNode.containerInfo
+      break
+    }
+    if (nextFiber.tag === HostComponent || nextFiber.tag === HostText) {
+      let props = nextFiber.pendingProps
+      if (props.hasOwnProperty(eventName)) {
+        temp_parent_arr.push(props[eventName])
+      }
+    }
+    nextFiber = nextFiber.return
+  }
+
+  let len = temp_parent_arr.length
+  let _event = {
+    nativeEvent: event
+  }
+  Object.defineProperty(_event, 'target', {
+    get() {
+      return _event.nativeEvent.target
+    }
+  })
+  let shouldStopCapture = false
+  let shouldStopCaptureFn = function () {
+    shouldStopCapture = true
+  }
+  _event.stopCapture = shouldStopCaptureFn
+  for (let i = len; i > 0; i--) {
+    temp_parent_arr[i - 1](_event)
+    if (shouldStopCapture) {
+      break
+    }
+  }
+}
+
+/* ---------事件代理相关 */
 
 /* ---------更新任务队列相关 */
 function createUpdate(expirationTime) {
@@ -760,10 +915,12 @@ function createWorkInProgress(current, pendingProps) {
 
   // eorkInProgress和current的updateQueue是共享的
   workInProgress.updateQueue = current.updateQueue
+  // 这个firstContextDependency是跟新的ContextAPI相关的
+  // 我这里实现的不太一样 所以暂时用不到这个属性
   // workInProgress.firstContextDependency = current.firstContextDependency
   workInProgress.sibling = current.sibling
   workInProgress.index = current.index
-  // workInProgress.ref = current.ref
+  workInProgress.ref = current.ref
   return workInProgress
 }
 
@@ -1034,7 +1191,9 @@ function completeWork(workInProgress) {
       // 就会 ["children", '1'] 最后返回这个数组作为updatePayload
       // 之后把 workInProgress.updateQueue = updatePayload
       diffAndUpdateHostComponent(workInProgress, instance, type, props)
+      // 如果这个节点ref也更新了的话就要给他个Ref
     }
+    markRef(workInProgress)
     return null
   }
   if (tag === HostText) {
@@ -1155,24 +1314,6 @@ function appendAllChildren(parentInstance, workInProgress) {
   }
 }
 
-
-let temp_events_obj = {
-  onClick: {},
-  onChange: {},
-  onBlur: {},
-  onFocus: {},
-  onInput: {},
-  onKeyDown: {},
-  onKeyUp: {},
-  onTouchEnd: {},
-  onTouchStart: {},
-  onTouchCancel: {},
-  // 等等...
-}
-
-let RootContainerHasAddedEvents = {}
-
-
 function finalizeInitialChildren(instance, type, props) {
   for (let propKey in props) {
     // 这一步是确保排除原型链上的
@@ -1199,163 +1340,6 @@ function finalizeInitialChildren(instance, type, props) {
     }
   }
 }
-
-// 瞎鸡儿写的事件代理 react里的和我这个完全不一样
-// react中的事件系统复杂的一比
-// 我就简单实现一下类似的
-
-function ensureListeningTo(instance, type, propKey) {
-  let rootContainer = null
-  let RootFiber = instance.__reactInternalInstance
-  while (RootFiber.tag !== HostRoot) {
-    RootFiber = RootFiber.return
-  }
-  rootContainer = RootFiber.stateNode.containerInfo
-  if (!RootContainerHasAddedEvents.hasOwnProperty(propKey)) {
-    RootContainerHasAddedEvents[propKey] = true
-    let eventName = propKey.slice(2).toLowerCase()
-    let eventName2 = ''
-    if (eventName === 'click') {
-      eventName2 = eventName
-    } else if (eventName === 'change') {
-      /*
-        input可能有这么多种类型
-        0: "blur"
-        1: "change"
-        2: "click"
-        3: "focus"
-        4: "input"
-        5: "keydown"
-        6: "keyup"
-        7: "selectionchange"
-      */
-      if (type === 'input' && instance.type === 'text') {
-        eventName2 = 'input'
-      } else if (type === 'input' && instance.type === 'file') {
-        eventName2 = eventName
-      } else if (type === 'select') {
-        eventName2 = eventName
-      } else if (type === 'textare') {
-        eventName2 === 'input'
-      }
-    } else {
-      eventName2 = eventName
-    }
-    if (type === 'input') {
-      rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn2, propKey), false)
-    } else {
-      rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn1, propKey), false)
-    }
-  }
-}
-
-function temp_dispatch_event_fn1(eventName, event) {
-  event = event || window.event
-  let target = event.target || event.srcElement
-  let nextFiber = target.__reactInternalInstance
-  let temp_parent_arr = []
-  let rootContainer = null
-  while (true) {
-    if (nextFiber.tag === HostRoot) {
-      rootContainer = nextFiber.stateNode.containerInfo
-      break
-    }
-    if (nextFiber.tag === HostComponent || nextFiber.tag === HostText) {
-      let props = nextFiber.pendingProps
-      if (props.hasOwnProperty(eventName)) {
-        temp_parent_arr.push(props[eventName])
-      }
-    }
-    nextFiber = nextFiber.return
-  }
-
-  let len = temp_parent_arr.length
-  let _event = {
-    nativeEvent: event
-  }
-  Object.defineProperty(_event, 'target', {
-    get() {
-      return _event.nativeEvent.target
-    }
-  })
-  let shouldStopBubble = false
-  let shouldStopBubbleFn = function () {
-    shouldStopBubble = true
-  }
-  _event.stopBubble = shouldStopBubbleFn
-  for (let i = 0; i < len; i++) {
-    temp_parent_arr[i](_event)
-    if (shouldStopBubble) {
-      break
-    }
-  }
-}
-
-function temp_dispatch_event_fn2(eventName, event) {
-  event = event || window.event
-  let target = event.target || event.srcElement
-  let nextFiber = target.__reactInternalInstance
-  let temp_parent_arr = []
-  let rootContainer = null
-  while (true) {
-    if (nextFiber.tag === HostRoot) {
-      rootContainer = nextFiber.stateNode.containerInfo
-      break
-    }
-    if (nextFiber.tag === HostComponent || nextFiber.tag === HostText) {
-      let props = nextFiber.pendingProps
-      if (props.hasOwnProperty(eventName)) {
-        temp_parent_arr.push(props[eventName])
-      }
-    }
-    nextFiber = nextFiber.return
-  }
-
-  let len = temp_parent_arr.length
-  let _event = {
-    nativeEvent: event
-  }
-  Object.defineProperty(_event, 'target', {
-    get() {
-      return _event.nativeEvent.target
-    }
-  })
-  let shouldStopCapture = false
-  let shouldStopCaptureFn = function () {
-    shouldStopCapture = true
-  }
-  _event.stopCapture = shouldStopCaptureFn
-  for (let i = len; i > 0; i--) {
-    temp_parent_arr[i - 1](_event)
-    if (shouldStopCapture) {
-      break
-    }
-  }
-}
-
-function interactiveUpdates(fn, eventName, event) {
-  // isBatchingInteractiveUpdates 初始是false
-  // 只有在这个函数中才会改变isBatchingInteractiveUpdates
-  if (isBatchingInteractiveUpdates) {
-    return fn(eventName, event)
-  }
-  // 记录下当前的isBatchingInteractiveUpdates和isBatchingUpdates的值
-  let previousIsBatchingInteractiveUpdates = isBatchingInteractiveUpdates
-  let previousIsBatchingUpdates = isBatchingUpdates
-  // 都置为true 用来在后面执行setState时候先不render和commit
-  isBatchingInteractiveUpdates = true
-  isBatchingUpdates = true
-  try {
-    return fn(eventName, event)
-  } finally {
-    isBatchingInteractiveUpdates = previousIsBatchingInteractiveUpdates
-    isBatchingUpdates = previousIsBatchingUpdates
-    if (!isBatchingUpdates && !isRendering) {
-      performSyncWork()
-    }
-  }
-}
-
 
 function diffAndUpdateHostComponent(workInProgress, instance, type, newProps) {
   let current = workInProgress.alternate
@@ -1708,6 +1692,24 @@ function commitAllHostEffects() {
     //   commitResetTextContent(nextEffect);
     // }
 
+    if (effectTag & Ref) {
+      // 进入这里说明他的Ref更新了
+      // 一般在更新完class组件或者更新完dom节点后可能会给个Ref
+      let current = effectTag.alternate
+      let currentRef = current ? current.ref : null
+      if (currentRef !== null) {
+        // 先获取上一轮的ref 如果有的话
+        // 是函数给他传个null 是对象给他current属性置为null
+        // 通过createRef创建的ref就会有current属性
+        // 之后再提交生命周期时候会设置为新ref
+        if (typeof currentRef === 'function') {
+          currentRef(null)
+        } else {
+          currentRef.current = null
+        }
+      }
+    }
+
     // 对于dom节点来讲主要需要执行的就是 Placement(新插入) Update(更新) Deletion(删除)
     // effectTag & (Placement | Update | Deletion) 意思就是
     // 等于括号里那几个中的某一个或某几个或没有 (xx | yy | zz) 就是获取这仨的集合
@@ -1721,8 +1723,12 @@ function commitAllHostEffects() {
 
     } else if (primaryEffectTag === PlacementAndUpdate) {
       // 进入这里说明又是新增又有修改
-      // 或者可以理解成原来存在但是跟兄弟节点进行了位置的互换
-      // 先调用Placement
+      // 比如说即是一个新的节点 而且还有一些生命周期之类的
+      commitPlacement(nextEffect);
+      // 然后把Placement给去掉
+      nextEffect.effectTag &= ~Placement
+      // 再调用commitWork进行更新的过程
+      commitWork(nextEffect);
     } else if (primaryEffectTag === Update) {
       // 进入这里表示更新
       commitWork(nextEffect)
@@ -1976,7 +1982,7 @@ function commitUnmount(node) {
   let tag = node.tag
   if (tag === ClassComponent) {
     // 先卸载ref 我暂时还没做ref相关的
-    // safelyDetachRef(node)
+    safelyDetachRef(node)
     let willUnmountLifeFn = node.stateNode.componentWillUnmount
     // 然后如果有这个生命周期就执行
     if (typeof willUnmuntLifeFn === 'function') {
@@ -1984,12 +1990,19 @@ function commitUnmount(node) {
     }
   } else if (tag === HostComponent) {
     // 对于原生的dom节点也要卸载ref
-    // safelyDetachRef(node)
+    safelyDetachRef(node)
   } else if (tag === HostPortal) {
     // 对于portal类型的组件 要重新调用这个方法
     // 这个方法里会找到portal的child 然后对child进行跟之前一样的操作
     // commitDeletion(node)
   }
+}
+
+function safelyDetachRef(current) {
+  let ref = current.ref
+  if (!ref) return
+  if (typeof ref === 'function') ref(null)
+  if (ref instanceof Object) ref.current = null
 }
 
 function detachFiber(fiber) {
@@ -2130,7 +2143,6 @@ function commitUpdate(instance, finishedWork) {
   }
 }
 
-
 function commitAllLifeCycles(finishedRoot, committedExpirationTime) {
   while (!!nextEffect) {
     let effectTag = nextEffect.effectTag
@@ -2146,8 +2158,8 @@ function commitAllLifeCycles(finishedRoot, committedExpirationTime) {
         // 就得好好处理 执行执行周期了
         if (effectTag & Update) {
           // 如果当前fiber上的标志挂的是Update的话
-          if (!!current) {
-            // 并且如果它有current的话 说明这个fiber是第一次渲染
+          if (!current) {
+            // 并且如果它没有current的话 说明这个fiber是第一次渲染
             // 这个时候要执行didMount
             instance.componentDidMount()
           } else {
@@ -2177,6 +2189,16 @@ function commitAllLifeCycles(finishedRoot, committedExpirationTime) {
       }
       else if (tag === HostComponent) {}
       else if (tag === HostRoot) {}
+    }
+
+    if (effectTag & Ref) {
+      // 进入这里说明在之前更新的时候发现有新的ref或初次渲染时有ref
+      let ref = nextEffect.ref
+      if (!!ref) {
+        let instance = nextEffect.stateNode // 获取到实例
+        if (typeof ref === 'function') ref(instance)
+        if (ref instanceof Object) ref.current = instance
+      }
     }
     nextEffect = nextEffect.nextEffect
   }
@@ -2376,6 +2398,8 @@ function updateClassInstance(workInProgress, newProps) {
 }
 
 function finishClassComponent(workInProgress, shouldUpdate) {
+  markRef(workInProgress)
+
   // 如果返回不更新的话就直接调用bailxxx跳过更新
   if (!shouldUpdate) return bailoutOnAlreadyFinishedWork(workInProgress)
   let instance = workInProgress.stateNode
@@ -2395,6 +2419,8 @@ function updateHostComponent(workInProgress) {
   if (typeof nextChildren === 'string' || typeof nextChildren === 'number') {
     nextChildren = null
   }
+  // 如果有ref或者ref更新了就给他设置上Ref
+  markRef(workInProgress)
   // let prevProps = null
   // let current = workInProgress.alternate
   // if (!!current) prevProps = current.memoizedProps
@@ -2459,7 +2485,13 @@ function updateContextProvider(workInProgress) {
 
   // 其实被注释掉的东西 是用来做性能优化的
   // 在react源码中 如果context改变了 是要不停地寻找子节点
-  // 当碰到class组件有更新时 会为发生了改变的子节点们手动创建update的
+  // 当碰到class组件有更新时
+  // 会手动给class组件创建update以及updateQueue
+  // 其他情况下 节点都不会产生updateQueue
+  // 不过也可以更新 因为在completeWork中
+  // 处理原生节点的时候 如果使用了context并且传进来的不一样了
+  // 就会触发diffProperties然后产生一个updatePayload
+  // 还会给这个节点加上一个Update的effectTag
 
   // 这里碰到个坑儿 如果直接跳过propagateContextChange的过程的话
   // 当context执行完毕马上又调用setState的时候
@@ -2470,11 +2502,6 @@ function updateContextProvider(workInProgress) {
   // 可是react源码中 如果走了propagateContextChange的话
   // 那节点的updateQueue就直接是null 就很正常
   // 所以还是应该不跳过propagateContextChange的好
-
-  // 正常源码中使用propagationContextChange之后可能不会有updateQueue
-  // 不过由于使用Consumer时传进去的props可能变了 所以在对dom节点
-  // 的completeWork中执行diffProperties时可能会产生新的数组更新
-  // 于是就会给对应的dom加上Update 所以在后面commit阶段也会更新
 
   // 这里要是把这堆都注释掉也行 后面就相当于强制更新了
   // 不管context是否发生变化 不管某个节点是否使用到了context
@@ -2704,18 +2731,22 @@ function reconcileChildFibers(workInProgress, newChild, isMount) {
   return null
 }
 
-
-
-
-
-// 提示！接下来要看为啥在setstate时对于text节点没有进入到usefiber方法中
-// 由于美进到usefiber 所以没调用createWorkInProgress
-// 所以导致上一次的firsteffect还存着
-
-
-
-
-
+function markRef(workInProgress) {
+  let newRef = workInProgress.ref
+  let current = workInProgress.alternate
+  if (!!newRef) {
+    if (!current) {
+      // 说明是初次渲染
+      // 要给他个Ref
+      workInProgress.effectTag |= Ref
+    } else if (!!current && current.ref !== newRef) {
+      // 进到这里说明不是初次渲染
+      // 但是本次更新的ref和上一次的不一样
+      // 也要给他设置Ref
+      workInProgress.effectTag |= Ref
+    }
+  }
+}
 
 
 function reconcileSingleElement(returnFiber, currentFirstChild, element) {
@@ -2756,6 +2787,7 @@ function reconcileSingleElement(returnFiber, currentFirstChild, element) {
   }
   if (element.type !== Symbol.for('react.fragment')) {
     createdFiber = createFiberFromElement(element, returnFiber.mode)
+    createdFiber.ref = element.ref
     createdFiber.return = returnFiber
   } else {
     // 这里暂时先不处理fragment的情况
@@ -3069,6 +3101,7 @@ function createChild(returnFiber, newChild) {
       createdFiber = createFiberFromElement(newChild, returnFiber.mode)
     }
   }
+  createdFiber.ref = newChild.ref
   createdFiber.return = returnFiber
   return createdFiber
 }
@@ -3124,13 +3157,13 @@ function updateElement(returnFiber, current, element, expirationTime) {
   // 当然如果没有lazy加载的功能的话 直接用新旧type对比也成
   if (current !== null && current.elementType === element.type) {
     const existing = useFiber(current, element.props, expirationTime)
-    // existing.ref = coerceRef(returnFiber, current, element)
+    existing.ref = element.ref
     existing.return = returnFiber
     return existing
   } else {
     // Insert
     const created = createFiberFromElement(element, returnFiber.mode, expirationTime)
-    // created.ref = coerceRef(returnFiber, current, element)
+    created.ref = element.ref
     created.return = returnFiber
     return created
   }
@@ -3171,12 +3204,6 @@ function mapRemainingChildren(returnFiber, currentFirstChild) {
   }
   return existingChildren
 }
-
-// function placeChild(newFiber, newIndex, isMount) {
-//   newFiber.index = newIndex
-//   if (isMount) return
-//   newFiber.effectTag = Placement
-// }
 
 function createFiberFromElement(element, mode) {
   let expirationTime = nextRenderExpirationTime
@@ -3362,7 +3389,7 @@ class ReactRoot {
 
       pendingCommitExpirationTime: NoWork,
       finishedWork: null, // 最终会生成的fiber树
-      timeoutHandle: noTimeout,
+      timeoutHandle: -1,
       context: null,
       pendingContext: null,
       // hydrate: hydrate,
@@ -3395,8 +3422,6 @@ class ReactRoot {
     let current = container.current // current就是RootFiber
     let currentTime = requestCurrentTime() // 这里得到的是到目前为止 react还能处理多少单位时间(1单位时间是10ms)
     let expirationTime = computeExpirationForFiber(currentTime, current)
-    // console.log(expirationTime)
-    // updateContainerAtExpirationTime(element, container, parentComponent, expirationTime, callback)
     this.scheduleRootUpdate(current, element, expirationTime, callback)
   }
   scheduleRootUpdate = (current, element, expirationTime, callback) => {
@@ -3467,8 +3492,6 @@ const classComponentUpdater = {
       偶数次更新时(2, 4, 6, ...)
       instance对应的fiber是workInProgress
       执行processUpdateQueue时fiber的updateQueue会被操作
-
-
     */
 
     /*
