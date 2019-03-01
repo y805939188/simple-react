@@ -1,16 +1,3 @@
-// /**
-//  * Copyright (c) Facebook, Inc. and its affiliates.
-//  *
-//  * This source code is licensed under the MIT license found in the
-//  * LICENSE file in the root directory of this source tree.
-//  *
-//  * @flow
-//  */
-
-// import MAX_SIGNED_31_BIT_INT from './maxSigned31BitInt';
-
-// export type ExpirationTime = number;
-
 const MAX_SIGNED_31_BIT_INT = 1073741823
 export const NoWork = 0;
 export const Never = 1;

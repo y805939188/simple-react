@@ -1,5 +1,7 @@
 
 const REACT_ELEMENT_TYPE = Symbol.for('react.element')
+const REACT_CONTEXT_TYPE = Symbol.for('react.context')
+const REACT_PROVIDER_TYPE = Symbol.for('react.provider')
 
 function ReactElement(type, key, props) {
   // console.log(type, key, props)
@@ -25,15 +27,6 @@ function createElement(type, props = {}, children) {
   return ReactElement(type, _key, _props)
 }
 
-// function Component(props, context, updater) {
-//   this.props = props
-//   this.context = context
-//   // this.refs = emptyObject
-
-//   this.updater = updater || null
-// }
-// Component.prototype.isReactComponent = true
-
 class Component {
   constructor(props, context, updater) {
     this.props = props
@@ -55,6 +48,24 @@ class Component {
   }
 }
 
+function createContext(defaultValue) {
+  let context = {
+    $$typeof: REACT_CONTEXT_TYPE,
+    _currentValue: defaultValue,
+    Provider: null,
+    Consumer: null
+  }
+  context.Provider = {
+    $$typeof: REACT_PROVIDER_TYPE,
+    _context: context
+  }
+  context.Consumer = {
+    $$typeof: REACT_CONTEXT_TYPE,
+    _context: context
+  }
+  return context
+}
+
 const React = {
   createElement: function(type, props, ...children) {
     // console.log(type, props, children)
@@ -62,6 +73,7 @@ const React = {
     // 然后应该做一些校验比如children或者props之类的
     return element
   },
+  createContext,
   Component
 }
 export default React

@@ -338,7 +338,16 @@ function enqueueUpdate(fiber, update) {
       // 也会让queue2.lastUpdate中的next指向改变
       // 于是就没有必要再调用一次appendUpdateToQueue去改变queue2的lastUpdate.next了
       // 所以只需要再改变queue2自己本身的lastUpdate属性的指向就可以了
-      queue2.lastUpdate = update
+      if (!!queue2.firstUpdate) {
+        // 其实正常react源码中是没有这个判断的
+        // 是直接queue2.lastUpdate = update
+        // 但是由于我这里的ContextAPI稍微更源码中不太一样
+        // 所以可能会导致到这里的时候queue2没有firstUpdate
+        // 于是我自己加了个判断
+        queue2.lastUpdate = update
+      } else {
+        appendUpdateToQueue(queue2, update)
+      }
     }
   }
 
@@ -643,6 +652,7 @@ function renderRoot(root, isYield) {
 
   // 这个workLoop就是要不停(或有停止)地递归生成fiber树
   workLoop(isYield)
+  // debugger
   root.finishedWork = root.current.alternate
 
 
@@ -811,7 +821,7 @@ function beginWork(workInProgress) {
     // 因为在createWorkInProgress的时候会将current.expirationTime赋值给workInProgress.expirationTime
     // 而renderExpirationTime则是root.nextExpirationTimeToWorkOn给赋值的全局变量 是当前任务的更新时间
     // 所以如果某个fiber上的updateExpirationTime是0就会小于renderExpirationTime也就会执行下面那个跳过更新的逻辑
-    if (oldProps === newProps && workInProgress.expirationTime < nextRenderExpirationTime) {
+    if (oldProps === newProps && workInProgress.expirationTime < nextRenderExpirationTime && workInProgress.tag !== ContextConsumer) {
       // 这个函数用来跳过本fiber的更新的方法
       // 如果当前workInProgress没有子节点就返回个null 如果有子节点就返回一个子节点的克隆
       return bailoutOnAlreadyFinishedWork(workInProgress)
@@ -834,6 +844,10 @@ function beginWork(workInProgress) {
     next = updateHostComponent(workInProgress)
   } else if (tag === HostText) {
     next = updateHostText(workInProgress)
+  } else if (tag === ContextProvider) {
+    next = updateContextProvider(workInProgress)
+  } else if (tag === ContextConsumer) {
+    next = updateContextConsumer(workInProgress)
   }
   // 当前这个workInProgress马上就要更新完了 所以可以把它的expirationTime置为NoWork了
   workInProgress.expirationTime = NoWork
@@ -1001,20 +1015,25 @@ function completeWork(workInProgress) {
     let instance = workInProgress.stateNode
     let type = workInProgress.type
     let props = workInProgress.pendingProps
-    // console.log(type)
-    // console.log(instance)
-    // console.log(props)
-    // console.log('-----------------------')
     if (!instance) {
       instance = createInstance(type, props, workInProgress)
       appendAllChildren(instance, workInProgress)
       // 这里会对该元素进行一堆事件的初始化
       // 把事件绑定到document上
-      // console.log(type)
       finalizeInitialChildren(instance, type, props)
       workInProgress.stateNode = instance
     } else {
-      diffAndUpdateHostComponent
+      // current !== null 说明有上一次的状态
+      // workInProgress.stateNode != null 说明有实例
+      // 所以进入这里说明不是第一次
+
+      // 这个方法中要对比前后dom是否有变化
+      // 内部调用prepareUpdate
+      // prepareUpdate会把不同类型的改变添加到数组
+      // 比如children从 0 → 1
+      // 就会 ["children", '1'] 最后返回这个数组作为updatePayload
+      // 之后把 workInProgress.updateQueue = updatePayload
+      diffAndUpdateHostComponent(workInProgress, instance, type, props)
     }
     return null
   }
@@ -1047,13 +1066,6 @@ function completeWork(workInProgress) {
   // 基本上除了SuspenseComponent组件之外
   // 剩下的tag类型都是返回的null
   return null
-}
-
-function diffAndUpdateHostComponent() {
-  // 当某个原生dom要进行更新时 会进入completeWork中的
-  // HostComponet 分支中的updateHostComponent$1方法
-  // 里头有什么perpareUpdate
-  // 明天该做这块了
 }
 
 function createInstance(type, props, workInProgress) {
@@ -1175,58 +1187,15 @@ function finalizeInitialChildren(instance, type, props) {
         domStyle[styleName] = styleValue
       }
     } else if (propKey === 'children') {
-      if (typeof props[propKey] === 'string') {
-        if (typeof prop === 'string') {
-          instance.textContent = prop
-        }
-        if (typeof prop === 'number') {
-          instance.textContent = String(prop)
-        }
+      if (typeof prop === 'string') {
+        instance.textContent = prop
+      }
+      if (typeof prop === 'number') {
+        instance.textContent = String(prop)
       }
     } else if (temp_events_obj.hasOwnProperty(propKey)) {
       // 进入这里说明props上有个事件相关的
-      let rootContainer = null
-      let RootFiber = instance.__reactInternalInstance
-      while (RootFiber.tag !== HostRoot) {
-        RootFiber = RootFiber.return
-      }
-      rootContainer = RootFiber.stateNode.containerInfo
-      if (!RootContainerHasAddedEvents.hasOwnProperty(propKey)) {
-        RootContainerHasAddedEvents[propKey] = true
-        let eventName = propKey.slice(2).toLowerCase()
-        let eventName2 = ''
-        if (eventName === 'click') {
-          eventName2 = eventName
-        } else if (eventName === 'change') {
-          /*
-            input可能有这么多种类型
-            0: "blur"
-            1: "change"
-            2: "click"
-            3: "focus"
-            4: "input"
-            5: "keydown"
-            6: "keyup"
-            7: "selectionchange"
-          */
-          if (type === 'input' && instance.type === 'text') {
-            eventName2 = 'input'
-          } else if (type === 'input' && instance.type === 'file') {
-            eventName2 = eventName
-          } else if (type === 'select') {
-            eventName2 = eventName
-          } else if (type === 'textare') {
-            eventName2 === 'input'
-          }
-        } else {
-          eventName2 = eventName
-        }
-        if (type === 'input') {
-          rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn2, propKey), false)
-        } else {
-          rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn1, propKey), false)
-        }
-      }
+      ensureListeningTo(instance, type, propKey)
     }
   }
 }
@@ -1234,6 +1203,52 @@ function finalizeInitialChildren(instance, type, props) {
 // 瞎鸡儿写的事件代理 react里的和我这个完全不一样
 // react中的事件系统复杂的一比
 // 我就简单实现一下类似的
+
+function ensureListeningTo(instance, type, propKey) {
+  let rootContainer = null
+  let RootFiber = instance.__reactInternalInstance
+  while (RootFiber.tag !== HostRoot) {
+    RootFiber = RootFiber.return
+  }
+  rootContainer = RootFiber.stateNode.containerInfo
+  if (!RootContainerHasAddedEvents.hasOwnProperty(propKey)) {
+    RootContainerHasAddedEvents[propKey] = true
+    let eventName = propKey.slice(2).toLowerCase()
+    let eventName2 = ''
+    if (eventName === 'click') {
+      eventName2 = eventName
+    } else if (eventName === 'change') {
+      /*
+        input可能有这么多种类型
+        0: "blur"
+        1: "change"
+        2: "click"
+        3: "focus"
+        4: "input"
+        5: "keydown"
+        6: "keyup"
+        7: "selectionchange"
+      */
+      if (type === 'input' && instance.type === 'text') {
+        eventName2 = 'input'
+      } else if (type === 'input' && instance.type === 'file') {
+        eventName2 = eventName
+      } else if (type === 'select') {
+        eventName2 = eventName
+      } else if (type === 'textare') {
+        eventName2 === 'input'
+      }
+    } else {
+      eventName2 = eventName
+    }
+    if (type === 'input') {
+      rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn2, propKey), false)
+    } else {
+      rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn1, propKey), false)
+    }
+  }
+}
+
 function temp_dispatch_event_fn1(eventName, event) {
   event = event || window.event
   let target = event.target || event.srcElement
@@ -1276,7 +1291,7 @@ function temp_dispatch_event_fn1(eventName, event) {
   }
 }
 
-function temp_dispatch_event_fn2(eventName, isBubble, event) {
+function temp_dispatch_event_fn2(eventName, event) {
   event = event || window.event
   let target = event.target || event.srcElement
   let nextFiber = target.__reactInternalInstance
@@ -1339,6 +1354,62 @@ function interactiveUpdates(fn, eventName, event) {
       performSyncWork()
     }
   }
+}
+
+
+function diffAndUpdateHostComponent(workInProgress, instance, type, newProps) {
+  let current = workInProgress.alternate
+  let oldProps = workInProgress.alternate.memoizedProps
+  if (oldProps === newProps) return
+
+  let updatePayload = prepareUpdate(instance, type, newProps, oldProps)
+  // debugger
+  workInProgress.updateQueue = updatePayload
+  if (!!updatePayload) workInProgress.effectTag |= Update
+}
+
+function prepareUpdate(instance, type, newProps, oldProps) {
+  return diffProperties(instance, type, newProps, oldProps)
+}
+
+function diffProperties(instance, type, newProps, oldProps) {
+  let updatePayload = []
+  let styleValueObj = {}
+  for (let propKey in oldProps) {
+    if (newProps.hasOwnProperty(propKey) || !oldProps.hasOwnProperty(propKey) || !oldProps[propKey]) {
+      // 这第一个循环要先把旧属性中有但是新属性中没有的给拿出来
+      // 因为新属性中没有了 所以要给它对应的值置为 ''
+      continue
+    }
+    if (propKey === 'style') {
+      for (let i in oldProps[propKey]) {
+        styleValueObj[i] = ''
+      }
+    }
+  }
+
+  for (let propKey2 in newProps) {
+    if (!newProps.hasOwnProperty(propKey2) || !newProps[propKey2]) continue
+    if (propKey2 === 'children') {
+      // 如果这个属性是children要更新的话
+      // 并且是个单一的文本节点的话
+      // 那就把updatePayload置为 [..., 'children', 'newChildText', ...]
+      let newProp = newProps[propKey2]
+      if (typeof newProp === 'string' || typeof newProp === 'number') {
+        updatePayload.push(propKey2, String(newProp))
+      }
+    } else if (propKey2 === 'style') {
+      let newStyles = newProps[propKey2]
+      styleValueObj = Object.assign(styleValueObj, newStyles)
+    } else if (temp_events_obj.hasOwnProperty(propKey2)) {
+      // 进入这里说明添加了事件
+      ensureListeningTo(instance, type, propKey2)
+    }
+  }
+  if (JSON.stringify(styleValueObj) !== '{}') {
+    updatePayload.push('style', styleValueObj)
+  }
+  return updatePayload
 }
 
 function bailoutOnAlreadyFinishedWork(workInProgress) {
@@ -1654,6 +1725,7 @@ function commitAllHostEffects() {
       // 先调用Placement
     } else if (primaryEffectTag === Update) {
       // 进入这里表示更新
+      commitWork(nextEffect)
     } else if (primaryEffectTag === Deletion) {
       // 走到这儿表示删除
       commitDeletion(nextEffect)
@@ -1754,6 +1826,26 @@ function commitPlacement(finishedWork) {
     // 所以要让当前节点node指向兄弟节点进行下一轮插入操作
     node.sibling.return = node.return
     node = node.sibling
+  }
+}
+
+function commitWork(finishedWork) {
+  // let current = finishedWork.alternate
+  let tag = finishedWork.tag
+  let instance = finishedWork.stateNode
+
+  // 基本上只要原生dom节点或文本节点可以有Update类型
+  // react源码中还有suspense组件也可以
+  if (tag === HostComponent) {
+    if (!!instance) {
+      // let newProps = finishedWork.memoizedProps
+      // let oldProps = current ? current.memoizedProps : null
+      commitUpdate(instance, finishedWork)
+    }
+  } else if (tag === HostText) {
+    if (!!instance) {
+      instance.nodeValue = finishedWork.memoizedProps
+    }
   }
 }
 
@@ -2005,6 +2097,35 @@ function getHostSibling(fiber) {
     */
     if (!(node.effectTag & Placement)) {
       return node.stateNode
+    }
+  }
+}
+
+function commitUpdate(instance, finishedWork) {
+  let updatePayload = finishedWork.updateQueue
+  if (!updatePayload) return
+  let current = finishedWork.alternate
+  let newProps = finishedWork.memoizedProps
+  let oldProps = current ? current.memoizedProps : null
+
+  for (let i = 0, len = updatePayload.length; i < len; i+=2) {
+    let propKey = updatePayload[i]
+    let propValue = updatePayload[i + 1]
+    if (propKey === 'children') {
+      let firstChild = instance.firstChild
+      if (firstChild && firstChild === instance.lastChild && firstChild.nodeType === 3) {
+        // 这里看它是不是只有一个文本节点
+        firstChild.nodeValue = propValue
+      } else {
+        instance.textContent = propValue
+      }
+    } else if (propKey === 'style') {
+      let style = instance.style
+      for (let stylePropKey in propValue) {
+        let stylePropValue = propValue[stylePropKey]
+        if (stylePropKey === 'float') stylePropKey = 'cssFloat'
+        style[stylePropKey] = stylePropValue
+      }
     }
   }
 }
@@ -2309,6 +2430,97 @@ function mountIndeterminateComponent(workInProgress) {
   return reconcileChildren(workInProgress, value)
 }
 // 更新不确定类型的节点
+
+// 更新Context类型的节点
+function updateContextProvider(workInProgress) {
+  // 通过React.createContext('name') 会返回一个ContextAPI对象
+  // 就是这个对象
+  // context = {
+  //   $$typeof: REACT_CONTEXT_TYPE,
+  //   _currentValue: defaultValue,
+  //   _currentValue2: defaultValue,
+  //   _threadCount: 0,
+  //   Provider: {
+  //     $$typeof: REACT_PROVIDER_TYPE,
+  //     _context: context // 这个context不能直接写在这儿 会未找到的
+  //   },
+  //   Consumer: {
+  //     $$typeof: REACT_CONTEXT_TYPE,
+  //     _context: context, // 这个context不能直接写在这儿 会未找到的
+  //     _calculateChangedBits: context._calculateChangedBits
+  //   }
+  // }
+  // 然后这里的providerType就是ContextAPI.Provider
+  let context = workInProgress.type._context
+  let newProps = workInProgress.pendingProps
+  let oldProps = workInProgress.memoizedProps
+  let newValue = newProps.value // Provider上要给个value属性
+  context._currentValue = newValue
+
+  // 其实被注释掉的东西 是用来做性能优化的
+  // 在react源码中 如果context改变了 是要不停地寻找子节点
+  // 当碰到class组件有更新时 会为发生了改变的子节点们手动创建update的
+
+  // 这里碰到个坑儿 如果直接跳过propagateContextChange的过程的话
+  // 当context执行完毕马上又调用setState的时候
+  // 就会发现updateQueue有值 但是firstUpdate以及lastUpdate都是null
+  // 所以经历了enqueueUpdate方法后 会导致alternate只有lastUpdate没有firstUpdate
+  // 就会导致后面可能会发生更新失败的情况
+  // 这种情况在enqueueUpdate中对queue2也进行一次和queue1一样的操作就可以了
+  // 可是react源码中 如果走了propagateContextChange的话
+  // 那节点的updateQueue就直接是null 就很正常
+  // 所以还是应该不跳过propagateContextChange的好
+
+  // 正常源码中使用propagationContextChange之后可能不会有updateQueue
+  // 不过由于使用Consumer时传进去的props可能变了 所以在对dom节点
+  // 的completeWork中执行diffProperties时可能会产生新的数组更新
+  // 于是就会给对应的dom加上Update 所以在后面commit阶段也会更新
+
+  // 这里要是把这堆都注释掉也行 后面就相当于强制更新了
+  // 不管context是否发生变化 不管某个节点是否使用到了context
+  // 只要setState都会更新
+
+  // if (!!oldProps) {
+  //   // 如果有oldProps说明不是第一次渲染
+  //   let oldValue = oldProps.value
+  //   if (Object.is(oldValue, newValue)) {
+  //     if (oldProps.children === newProps.children) {
+  //       // 进入这里 说明新旧的context一样并且前后两次的children也一样 那就可以跳过更新
+  //       return bailoutOnAlreadyFinishedWork(workInProgress)
+  //     }
+  //   } else {
+  //     // 进入这里说明context发生了改变
+  //     // propagateContextChange(workInProgress)
+  //   }
+  // }
+  return reconcileChildren(workInProgress, newProps.children)
+}
+
+function updateContextConsumer(workInProgress) {
+  let context = workInProgress.type._context
+  let newProps = workInProgress.pendingProps
+  let render = newProps.children
+  if (typeof render !== 'function') return null
+  // currentlyRenderingFiber = workInProgress
+  // lastContextDependency = null
+  // lastContextWithAllBitsObserved = null
+  // workInProgress.firstContextDependency = null
+  let contextItem = {
+    context,
+  }
+  workInProgress.firstContextDependency = contextItem
+  let newValue = context._currentValue
+  let newChildren = render(newValue)
+  return reconcileChildren(workInProgress, newChildren)
+}
+
+function propagateContextChange(workInProgress) {
+  // 这里要往下找 直到找到Consumer组件
+  // 不过注意这个Consumer组件也有可能是新添加的
+  // 也就是说 如果找到的Consumer是上一轮就有的 那么这个Consumer会有dependency
+  // 反之如果是本次新产生的则没有
+}
+// 更新Context类型的节点
 
 // 更新state
 function processUpdateQueue(workInProgress, instance) {
@@ -2987,6 +3199,12 @@ function createFiberFromTypeAndProps(type, key, pendingProps, mode, expirationTi
   } else {
     // 进入这里就要分别判断各种react自己内部提供的组件类型了
     // 比如concurrent fragment之类的
+    let tag = type.$$typeof
+    if (tag === Symbol.for('react.provider')) {
+      flag = ContextProvider
+    } else if (tag === Symbol.for('react.context')) {
+      flag = ContextConsumer
+    }
   }
 
   let fiber = createFiber(flag, pendingProps, key, mode)
@@ -3240,7 +3458,7 @@ class ReactWork {
 const classComponentUpdater = {
   // isMounted: 
   enqueueSetState(instance, payload, callback) {
-    debugger
+    // debugger
     /*
       执行setState时
       基数次更新时(1, 3, 5, ...)

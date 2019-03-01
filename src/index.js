@@ -1,193 +1,135 @@
 import React from './my-react/react/react'
 import ReactDOM from './my-react/react-dom/react-dom'
 
-// function Ding() {
+// function Ding5(props) {
 //   return (
-//     <div>
-//       <h1>1</h1>
-//       <h2>2</h2>
-//       <h3>3</h3>
-//     </div>
+//     <div>{props.liubi}</div>
 //   )
 // }
-// let a = Ding()
-// console.log(a)
-// debugger
-// console.log(React.createElement(
-//   'div',
-//   null,
-//   React.createElement('h1', null, 1),
-//   React.createElement('h2', null, 2)
-// ))
 
 
-// console.log(React)
-// console.log(<div id='dingye'>777</div>)
-// class Ding extends React.Component {
-//   static defaultProps = {
-//     ding3: 123456
+// class Ding4 extends React.Component {
+//   state = {
+//     ding4: 1
 //   }
-//   static getDerivedStateFromProps(nextProps, prevState) {
-//     return nextProps
-//   }
-//   constructor(props) {
-//     super(props)
-//     this.state = {
-//       ding1: 999,
-//       ding2: props.myProp
-//     }
+
+//   handleClick2 = () => {
+//     let ding4 = this.state.ding4
+//     this.setState({
+//       ding4: ++ding4
+//     })
 //   }
 //   render() {
 //     return (
-//       <div>{this.state.ding1}</div>
+//       <div>
+//         <div onClick={this.handleClick2}>{this.state.ding4}</div>
+//         <Ding5 liubi={'liubi'}></Ding5>
+//       </div>
 //     )
 //   }
 // }
 
-// function Ding(props) {
-//   return <div>
-//     <h1 style={{color: 'red'}}>{props.ding1}</h1>
-//     <h2>{props.ding2}</h2>
-//   </div>
+// class Ding2 extends React.Component {
+//   state = {
+//     ding3: false
+//   }
+//   handleClickBtn = () => {
+//     this.setState({
+//       ding3: !this.state.ding3
+//     })
+//   }
+//   render() {
+//     return (
+//       <div style={{color: 'red', width: '100px', height: '100px', backgroundColor: '#000'}}>
+//         {this.props.hehe}
+//         <button onClick={this.handleClickBtn}>
+//           {this.state.ding3 ? '222' : '333'}
+//         </button>
+//         <Ding4></Ding4>
+//       </div>
+//     )
+//   }
 // }
 
-class Ding2 extends React.Component {
-  render() {
-    return (
-      <span>{this.props.ding2}</span>
-    )
-  }
-}
+// class Ding3 extends React.Component {
+//   state = {
+//     ding: true,
+//     ding2: 666
+//   }
+//   handleClick1 = (event) => {
+//     this.setState({
+//       ding: !this.state.ding
+//     })
+//   }
+//   render () {
+//     return (
+//       <div>
+//         {this.state.ding ? '666' : '999'}
+//         {/* <button onClick={this.handleClick1}>点我</button> */}
+//         <Ding2 hehe={this.state.ding2}></Ding2>
+//       </div>
+//     )
+//   }
+// }
 
-class Ding extends React.Component {
+let Context = React.createContext({ding: 666})
+// console.log(Context)
+
+let Provider = Context.Provider
+let Consumer = Context.Consumer
+
+class Ding6 extends React.Component {
+  state = {
+    ding10: false
+  }
+  handleClickBtn2 = () => {
+    this.setState({
+      ding10: !this.state.ding10
+    })
+  }
   render() {
     return (
       <div>
-        <h2>niubi</h2>
-        <h3>zheshih3</h3>
-        <Ding2 ding2='zhe shi ding2'></Ding2>
+        <button onClick={this.handleClickBtn2}>dian ji</button>
+        <h2>{this.state.ding10 ? 11 : 22}</h2>
+        <h1>{this.props.dingge}</h1>
       </div>
     )
   }
 }
 
 class Ding5 extends React.Component {
-  state = {
-    yu: false
-  }
-  handleClickBtn = (e) => {
-    // console.log(e.stopBubble)
-    // e.stopBubble()
-    // debugger
-    this.setState({
-      yu: !this.state.yu
-    })
-  }
   render() {
-    console.log(666,this.state)
     return (
-      <button onClick={this.handleClickBtn}>{this.state.yu ? '666' : '999'}</button>
-      // 6666
+      <Consumer>
+        {
+          (contextValue) => {
+            return <Ding6 dingge={contextValue.ding}></Ding6>
+          }
+        }
+      </Consumer>
     )
   }
 }
-
-
-// 要改的bug 组件嵌套时子组件执行setState会有毛病
-
-
 class Ding4 extends React.Component {
-  // state = {
-  //   ding: false
-  // }
-  // handleClick = () => {
-  //   this.setState({
-  //     ding: !this.state.ding
-  //   })
-  // }
-  render() {
-    return (
-      <div>
-        {/* this is Ding4 {this.state.ding ? 1111 : 2222} */}
-        {/* <button onClick={this.handleClick}>click</button> */}
-        <Ding5></Ding5>
-      </div>
-    )
-  }
-}
-
-class Ding3 extends React.Component {
-  state = {
-    ding: 1,
-    ding2: 666,
-    ding3: true
-  }
-  handleClick1 = (event) => {
-    console.log(event)
-    console.log('div')
-    // event.stopBubble()
-    // console.log('div')
-  }
-  handleClick2 = (event) => {
-    event.stopBubble()
-    console.log('h1')
-    // console.log('h1')
-  }
-  handleClick3 = (num, event) => {
-    // console.log(this.state)
-    // console.log(num, event)
-    // console.log('parent')
+  state = {ding: 1}
+  handleClickBtn = () => {
     let ding = this.state.ding
     this.setState({
       ding: ++ding
     })
   }
-  handleChange = (e) => {
-    console.log(e.target.value)
-    // this.setState({
-    //   ding: 9999
-    // })
-  }
-  handleClick4 = () => {
-    // debugger
-    this.setState({
-      ding3: !this.state.ding3
-    })
-  }
-  renderArrayFn = () => {
-    if (this.state.ding3) {
-      return [
-        <h1>h1 {this.state.ding2}</h1>,
-        <h2>{[1, 2]}</h2>, 
-        <h3>h3</h3>
-      ]
-    } else {
-      return [
-        <h2>h2</h2>,
-        <h1>h1</h1>,
-        // <h1>h1</h1>,
-        // <h2>h2</h2>,
-        // <h3>h3</h3>
-      ]
-    }
-  }
-  render () {
+  render() {
     return (
-      <div onClick={this.handleClick4}>
-        <Ding4></Ding4>
-        {/* {this.renderArrayFn()} */}
-        {/* clickme {this.state.ding} */}
-        {/* 8888899
-        <input type="text" onKeyDown={this.handleChange}/>
-        <h1 onClick={this.handleClick2}>{this.props.ding1}</h1>
-        <button onClick={this.handleClick1}handleClick1>点我</button> */}
-      </div>
+      <Provider value={{ding: this.state.ding}}>
+        <Ding5></Ding5>
+        <button onClick={this.handleClickBtn}>click me</button>
+      </Provider>
     )
   }
 }
 ReactDOM.render(
-  // <div id="ding-ge">9999</div>,
-  // <Ding myProp={'dinggewudi'}>dddddd</Ding>,
-  <Ding3 ding1="666" ding2="999"></Ding3>,
+  // <Ding3></Ding3>,
+  <Ding4></Ding4>,
   document.querySelector('#app')
 )
