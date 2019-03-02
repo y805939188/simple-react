@@ -3373,7 +3373,7 @@ class ReactRoot {
     // 这个FiberRoot和RootFiber不是一个东西
     // 这个FiberRoot要作为RootFiber的实例也就是stateNode
     let root = {
-      current: uninitializedFiber, // 
+      current: uninitializedFiber, // 要指向RootFiber
       containerInfo: containerInfo, // 这个就是ReactDOM时候传进来的第二个参数
       pendingChildren: null,
 
