@@ -27,7 +27,17 @@
 <br><br>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;setState时同样会在render阶段找出哪个节点有更新然后挂到父节点上，最终把全部更新挂到RootFiber上。最后commit阶段挨个儿进行更新。<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;以上setState只是在同步状态下。使用了Concurrent组件会开启异步模式，中间render过程会有点不一样。同步状态下render阶段会一把梭，异步模式，就回头再说吧。
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;以上setState只是在同步状态下。使用了Concurrent组件会开启异步模式，中间render过程会有点不一样。同步状态下render阶段会一把梭，异步模式，就回头再说吧。<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;知道了React的整体渲染更新流程，再看那些乱七八糟的函数就好看多了~<br><br><br>
+
+# React函数调用流程
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+因为react这个库本身没做啥事儿，就是把JSX肝成React之类的，主要做事儿的都是react-dom做的，所以就只写一些react-dom的方法。<br>
+&nbsp;&nbsp;&nbsp;&nbsp;
+ReactDOM.render<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[legacyRenderSubtreeIntoContainer](./procedure/legacyRenderSubtreeIntoContainer)
+
+
 
 
 ```mermaid

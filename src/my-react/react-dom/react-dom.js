@@ -3703,6 +3703,7 @@ const classComponentUpdater = {
 
 const ReactDOM = {
   render: function(element, container, callback) {
+    debugger
     // 第一个参数是parentComponent
     // 第四个参数是标识是否是服务端渲染
     // 这个legacyRenderSubtreeIntoContainer可能会在其他方法中被用到
