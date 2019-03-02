@@ -3375,32 +3375,30 @@ class ReactRoot {
     let root = {
       current: uninitializedFiber, // 要指向RootFiber
       containerInfo: containerInfo, // 这个就是ReactDOM时候传进来的第二个参数
-      pendingChildren: null,
+      pendingChildren: null, // 这个暂时没啥用
 
-      earliestPendingTime: NoWork,
-      latestPendingTime: NoWork,
-      // earliestSuspendedTime: NoWork,
-      // latestSuspendedTime: NoWork,
+      earliestPendingTime: NoWork, // 表示等待更新的任务的最高优先级
+      latestPendingTime: NoWork, // 表示等待更新的任务中的最低优先级
+      // 下有这仨都跟suspense组件有关
+      // earliestSuspendedTime: NoWork, // 这个表示被挂起的优先级最高的任务
+      // latestSuspendedTime: NoWork, // 这个表示被挂起的优先级最低的任务
       latestPingedTime: NoWork,
 
       // pingCache: null,
 
       // didError: false,
 
-      pendingCommitExpirationTime: NoWork,
-      finishedWork: null, // 最终会生成的fiber树
-      timeoutHandle: -1,
-      context: null,
+      pendingCommitExpirationTime: NoWork, // 这个是等待提交阶段的优先级
+      finishedWork: null, // 最终会生成的fiber树 也就是最终的workInProgress树
+      timeoutHandle: -1, // 暂时没啥太大用
+      context: null, // contextAPI相关
       pendingContext: null,
-      // hydrate: hydrate,
-      nextExpirationTimeToWorkOn: NoWork,
-      expirationTime: NoWork,
+      // hydrate: hydrate, // 这个跟服务端渲染有关
+      nextExpirationTimeToWorkOn: NoWork, // 异步更新时表示到这个时间之前都可以中断任务 一旦超过就不能中断了
+      expirationTime: NoWork, // 当前fiber上如果有更新的话 那么这个属性就表示当前fiber的优先级
       // firstBatch: null,
       nextScheduledRoot: null, // 下一个root节点 一个react应用可能会有好多根节点
-
-      // interactionThreadID: tracing.unstable_getThreadID(),
-      // memoizedInteractions: new Set(),
-      // pendingInteractionMap: new Map()
+      // 源码中还有几个看上去就一点b用没有的属性 不写了
     }
 
     uninitializedFiber.stateNode = root

@@ -1,4 +1,4 @@
-```
+```js
 function legacyRenderSubtreeIntoContainer(parentComponent, children, container, forceHydrate, callback) {
   // 这个_reactRootContainer就是FiberRoot
   // 第一次肯定是undefined
@@ -10,6 +10,8 @@ function legacyRenderSubtreeIntoContainer(parentComponent, children, container, 
     // 这个isConcurrent表示不使用异步渲染
     // 因为初次渲染时是一定要同步更新的 所以这里要默认状态是false
     let isConcurrent = false
+    // 就是这里创建了一个Root作为React应用的根儿
+    // 然后在创建Root的同时还顺便创建了一个未初始化的RootFiber
     root = container._reactRootContainer = new ReactRoot(container, isConcurrent)
 
     // 这里要检查callback
