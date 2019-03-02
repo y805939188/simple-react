@@ -32,7 +32,7 @@
 
 # React函数调用流程
 &emsp;&emsp;
-因为react这个库本身没做啥事儿，就是把JSX肝成React之类的，主要做事儿的都是react-dom做的，所以就只写一些react-dom的方法。<br><br>
+因为react这个库本身没做啥事儿，就是把JSX肝成React元素之类的(就是那个有$$typeof的就是react元素)，主要做事儿的都是react-dom做的，所以就只写一些react-dom的方法。<br><br>
 ReactDOM.render(调用关系基本是按照缩进来的)<br>
 &emsp;[legacyRenderSubtreeIntoContainer](./procedure/legacyRenderSubtreeIntoContainer)<br>
 &emsp;[updateContainer](./procedure/updateContainer)<br>
@@ -111,4 +111,29 @@ ReactDOM.render(调用关系基本是按照缩进来的)<br>
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;[commitDeletion](./procedure/commitDeletion)<br>
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;[detachFiber](./procedure/detachFiber)<br>
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;[commitAllLifeCycles](./procedure/commitAllLifeCycles)<br>
+<br>
+<br>
+setState(同步)<br>
+&emsp;[enqueueSetState](./procedure/enqueueSetState)
+<br>
+&emsp;&emsp;[requestCurrentTime](./procedure/requestCurrentTime)
+<br>
+&emsp;&emsp;[computeExpirationForFiber](./procedure/computeExpirationForFiber)
+<br>
+&emsp;&emsp;[createUpdate](./procedure/createUpdate)
+<br>
+&emsp;&emsp;[enqueueUpdate](./procedure/enqueueUpdate)
+<br>
+&emsp;&emsp;[scheduleWork](./procedure/scheduleWork)
+<br>
+&emsp;&emsp;&emsp;scheduleWorkToRoot
+<br>
+&emsp;&emsp;&emsp;(然后接下来的调用关系就跟上有基本一致了)<br><br>
+&emsp;&emsp;&emsp;这个是同步的方式 异步走的其实也是这个流程<br>
+&emsp;&emsp;&emsp;不过就是在计算时间的那里会计算出一个非Sync的时间<br>
+&emsp;&emsp;&emsp;之后进行到requestWork的时候就走scheduleCallbackWithExpirationTime了<br>
+<br>
+<br>
+<br>
+其他各种API以后会慢慢更新的，如果哪儿说的有啥问题的话请告诉我。顺便请各位大佬随手点个星星!小弟不胜感激~
 
