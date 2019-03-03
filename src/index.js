@@ -84,9 +84,21 @@ class Ding7 extends React.Component {
   }
 }
 
+class Ding10 extends React.Component {
+  render() {
+    return (
+      <div>
+        <h1>h1</h1>
+        <h2>h2</h2>
+      </div>
+    )
+  }
+}
+
 ReactDOM.render(
   // <Ding3></Ding3>,
   <Ding4></Ding4>,
   // <Ding7></Ding7>,
+  // <Ding10></Ding10>,
   document.querySelector('#app')
 )
