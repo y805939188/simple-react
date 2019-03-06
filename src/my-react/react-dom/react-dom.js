@@ -1474,8 +1474,7 @@ function bailoutOnAlreadyFinishedWork(workInProgress) {
     newChildFiber.return = workInProgress
     let currentChildSibling = currentChild.sibling
     while (!!currentChildSibling) {
-      // 如果这个child有兄弟节点的话保证它兄弟节点也是克隆的
-      // 把它的所有兄弟节点都要创建克隆的workInProgress
+      // 要给它所有的children都创建workInProgress
       let newChildFiberSibling = createWorkInProgress(currentChildSibling, currentChildSibling.pendingProps)
       newChildFiber.sibling = newChildFiberSibling
       newChildFiberSibling.return = workInProgress
@@ -3562,7 +3561,7 @@ const classComponentUpdater = {
     // debugger
     /*
       执行setState时
-      基数次更新时(1, 3, 5, ...)
+      奇数次更新时(1, 3, 5, ...)
       instance对应的fiber是current
       执行processUpdateQueue时fiber的updateQueue不会改变
       偶数次更新时(2, 4, 6, ...)
