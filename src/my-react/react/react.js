@@ -2,6 +2,7 @@
 const REACT_ELEMENT_TYPE = Symbol.for('react.element')
 const REACT_CONTEXT_TYPE = Symbol.for('react.context')
 const REACT_PROVIDER_TYPE = Symbol.for('react.provider')
+const REACT_CONCURRENT_MODE_TYPE = Symbol.for('react.concurrent_mode')
 
 function ReactElement(type, key, ref, props) {
   // console.log(type, key, props)
@@ -72,6 +73,7 @@ function createRef() {
   }
 }
 
+const ConcurrentMode = REACT_CONCURRENT_MODE_TYPE
 const React = {
   createElement: function(type, props, ...children) {
     // console.log(type, props, children)
@@ -79,8 +81,17 @@ const React = {
     // 然后应该做一些校验比如children或者props之类的
     return element
   },
+  ConcurrentMode: REACT_CONCURRENT_MODE_TYPE,
   createContext,
   createRef,
-  Component
+  Component,
 }
 export default React
+// webpack 编译后的default导出是没法解构的
+// 必须挨个export才行
+export {
+  ConcurrentMode,
+  createContext,
+  createRef,
+  Component,
+}

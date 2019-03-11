@@ -1,6 +1,7 @@
 import {
   NoContext,
-  ConcurrentMode
+  ConcurrentMode,
+  StrictMode
 } from './ReactTypeOfMode'
 import {
   NoEffect, // 表示不需要更新
@@ -22,7 +23,7 @@ import {
   HostComponent, // 原生节点类型
   HostText, // 文本类型
   HostPortal, // portal类型 就是可以往别处插的类型
-  // Mode, // 这个不知道
+  Mode, // 这个表示fiber是Mode类型 就比如ConcurrentMode或StrictMode
   ContextProvider, // context的provider
   ContextConsumer // context的consumer
 } from './ReactWorkTags'
@@ -30,15 +31,18 @@ import {
   NoWork, // 这个表示没有任务
   Never, // 这个表示永远不会被更新到
   Sync, // 这个表示优先级最大 同步
-  msToExpirationTime // 这个是用来换算优先级和时间 的
+  msToExpirationTime, // 用时间换算优先级
+  // expirationTimeToMs, // 用优先级换算时间
+  computeAsyncExpiration, // 计算Concurrent模式下低优先级任务的优先级
+  computeInteractiveExpiration // 计算Concurrent模式下高优先级任务的优先级
 } from './ReactFiberExpirationTime'
 import {
   UpdateState // setState和ReactDOM.render的时候都是这个类型
 } from './ReactUpdateQueue'
 
 let nextUnitOfWork = null // 表示下一个要被调度的fiber
-let nextRoot = null // 表示下一个有更新的root
 let nextEffect = null // 表示下一个有要被commit的fiber
+let nextRoot = null // 表示下一个要执行任务的root
 
 let firstScheduledRoot = null // 第一个要被调度的Root
 let lastScheduledRoot = null // 最后一个要被调度的Root 和上面那个是一条链表
@@ -59,6 +63,19 @@ let currentRendererTime = msToExpirationTime(originalStartTimeMs)
 let currentSchedulerTime = currentRendererTime
 let expirationContext = NoWork
 
+let ifError = (function () {
+  // 这个函数没用 就是怕while循环万一卡死了可以退出
+  let _name = ''
+  let _time = 0
+  return function (name, time) {
+    _name = _name !== name ? name : _name
+    _time++
+    if (_time >= time) {
+      throw `${name}函数的执行次数超过了${time}次`
+    }
+  }
+})()
+
 
 /* ---------计算时间相关 */
 function requestCurrentTime() {
@@ -78,6 +95,7 @@ function requestCurrentTime() {
 }
 
 function computeExpirationForFiber(currentTime, fiber) {
+  debugger
   let expirationTime = null
   if (expirationContext !== NoWork) {
     // 当通过syncUpdates把任务强制变为最高优先级的时候就会直接走这里
@@ -98,28 +116,59 @@ function computeExpirationForFiber(currentTime, fiber) {
     // 只有当给组件包裹了 <ConcurrentMode></ConcurrentMode> 的时候
     // 才会进入这个逻辑 表示该组件下的所有更新任务都要以低优先级的异步方式更新
     if (fiber.mode & ConcurrentMode) {
+      // 给组件包裹了ConcurrentMode组件之后会走到这里
       if (isBatchingInteractiveUpdates) {
         // 进入这里说明是批量更新
-        // 一般正常情况下如果在同一个函数中写了多个setState的话
-        // isBatchingInteractiveUpdates就是true
-        // 但是当一个函数中同时有多个异步的setState的时候
-        // isBatchingInteractiveUpdates就是false
-        // 比如在setTimeout的回调中放了好多setState的话
-        // 这种情况下就不会批量更新 执行一个setState触发一次更新
-        // 不过如果给所有的setState外部包裹上batchedUpdates
-        // 那也会走这个逻辑 就相当于把所有的异步setState放进一个队列 最后统一更新
+        // isBatchingInteractiveUpdates初始默认是false
+        // 而在合成事件中 比如onClick等 合成事件会触发 interactiveUpdates方法
+        // 这个方法中会将isBatchingInteractiveUpdates和isBatchingUpdates临时置为true
+        // 然后才会去调用自己写的真实的想触发的事件 于是在事件中不管执行几次setState
+        // 都是按照批量更新进行的(isBatchingUpdates控制是否直接退出还是继续往下去调度Root)
+        // 完事儿之后再给isBatchingInteractiveUpdates和isBatchingUpdates置回false
 
+        // 当传的事件中有异步的时候
+        // 虽然interactiveUpdates中最终也会触发performSyncWork
+        // 但是里头由于还没执行到异步中的setState所以不一定有root
+        // 所以可能会直接退出
+        // 之后当执行到异步中的setState的时候isBatchingInteractiveUpdates就是false
+        // 于是就会走到下面按个Async的逻辑中(在使用了Concurrent组件的前提下 不用Concurrent模式就直接Sync)
+        // 不过如果给所有的setState的最外部包裹上batchedUpdates
+        // 比如: 
+        // setTimeout(() => {
+        //   batchedUpdates(() => {
+        //     this.setState({ // isBatchingUpdates是true 批量更新
+        //       ding: xxx
+        //     })
+        //     this.setState({ // isBatchingUpdates是true 批量更新
+        //       ding: yyy
+        //     })
+        //     console.log(this.state.ding) // 不能获取
+        //   })
+        //   console.log(this.state.ding) // 能获取
+        // })   
+
+        // 或者当使用addEventListener绑定的事件时 isBatchingInteractiveUpdates也是false
         // 批量更新的优先级相对来说要稍微高一点 比sync低 比async高
-        // expirationTime = computeInteractiveExpiration(currentTime)
+        expirationTime = computeInteractiveExpiration(currentTime)
       } else {
-        // 给组件包裹了ConcurrentMode组件之后 组件默认都采用async的更新方式
-        // 这种更新方式的优先级是最低的
-        // expirationTime = computeAsyncExpiration(currentTime)
+        // 总结一下就是
+        // 当外层包裹了Concurrent组件的前提下
+        // 不把setState放在异步中就会走到上面那个批量更新的逻辑中
+        // 而当把setState放在异步中 比如用了setTimeout或放在addEventListener中
+        // 都会进入到这个Async的逻辑
+        expirationTime = computeAsyncExpiration(currentTime)
       }
-      // if (nextRoot !== null && expirationTime === nextRenderExpirationTime) {
-      //   // 这块是干啥的暂时不太理解
-      //   expirationTime -= 1;
-      // }
+      if (nextRoot !== null && expirationTime === nextRenderExpirationTime) {
+        // 这块是当异步更新时
+        // 比如在对fiber树render了一半的时候讲线程交还给浏览器
+        // 然后交还的这段时间内 又触发了一个setState的话
+        // 这个时候nextRoot是有值的
+        // nextRenderExpirationTime也有值 就是刚才还没有完成的那个更新的截止时间
+        // 进到这里的话 说明在交还主线程的这段时间里执行的setState的优先级
+        // 和上一把没完成的是一样的 所以就给它减个1 让它的优先级相对来说第一点
+        // 这样就优先执行上一把还没整完的那个更新了
+        expirationTime -= 1;
+      }
     } else {
       // 如果即不是异步也不批量也不是在正在更新fiber树的途中的话
       // 就直接让这个expirationTime变为同步的Sync
@@ -523,6 +572,9 @@ function enqueueUpdate(fiber, update) {
   // 所以本轮在之后要生成的workInProgress的updateQueue 一定是只保存着本次最新的update的对象
 }
 
+
+// 这个方法中和react源码中的enqueueUpdate的目的是一致的
+// 只不过简化了一下
 // function enqueueUpdate(fiber, update) {
 //   // 由于react中采用的是current和workInProgress的这种设计
 //   // 在执行setState时会发生一种情况
@@ -1046,6 +1098,9 @@ function beginWork(workInProgress) {
     next = updateContextProvider(workInProgress)
   } else if (tag === ContextConsumer) {
     next = updateContextConsumer(workInProgress)
+  } else if (tag === Mode) {
+    // 进入这里说明是ConcurrentMode或StrictMode
+    next = updateMode(workInProgress)
   }
   // 当前这个workInProgress马上就要更新完了 所以可以把它的expirationTime置为NoWork了
   workInProgress.expirationTime = NoWork
@@ -1244,8 +1299,6 @@ function completeWork(workInProgress) {
     // completeWork 这个时候不会进到这这个tag === HostText里
     // 而是在初始化dom节点时 给dom设置属性时候判断prop是children
     // 然后如果是string类型就给他放进去
-    // 当只有一个文本类型的children发生改变的时候 会给这个文本节点的父元素
-    // 一个ContentReset类型的effectTag(16)
 
     // 如果要是有多个文本类型的子节点的话 那就相当于children是个数组
     // 就会按照数组的方式处理 reconcileChildrenArray
@@ -1255,7 +1308,8 @@ function completeWork(workInProgress) {
     // 就在实例化父节点时 通过哪个appendAllChild添加进去
     let newText = workInProgress.pendingProps
     if (newText && !!workInProgress.stateNode) {
-      workInProgress.stateNode.nodeValue = newText
+      // workInProgress.stateNode.nodeValue = newText
+      workInProgress.effectTag |= Update
     } else {
       workInProgress.stateNode = document.createTextNode(newText)
     }
@@ -2619,6 +2673,13 @@ function propagateContextChange(workInProgress) {
 }
 // 更新Context类型的节点
 
+// 更新Mode类型
+function updateMode(workInProgress) {
+  let nextChildren = workInProgress.pendingProps.children
+  return reconcileChildren(workInProgress, nextChildren)
+}
+// 更新Mode类型
+
 // 更新state
 function processUpdateQueue(workInProgress, instance) {
   // react在更新的时候最受的规则是
@@ -3073,63 +3134,6 @@ function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren, isM
   }
 
   return resultingFirstChild
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  // let returnFiberLastChild = null
-  // if (!!currentFirstChild) {
-  //   // 如果有子节点的话 就直接都干掉
-  //   // 不过react里进行了特别屌的复杂度是 O(n) 的优化
-  //   returnFiberLastChild = deleteRemainingChildren(returnFiber, currentFirstChild)
-  // }
-  // // 根据本次的newChildren生成新的fiber
-  
-  // let firstChild = returnFiberLastChild || null
-  // let prevFiber = firstChild
-  // for (let i = 0; i < newChildren.length; i++) {
-  //   let newFiber = createChild(returnFiber, newChildren[i])
-  //   if (!newFiber) continue
-  //   placeChild(newFiber, i, isMount)
-
-  //   if (firstChild === null) {
-  //     firstChild = newFiber
-  //   } else {
-  //     prevFiber.sibling = newFiber
-  //   }
-  //   prevFiber = newFiber
-  // }
-  // // return firstChild
-  // return currentFirstChild ? currentFirstChild : firstChild
 }
 
 function updateSlot(returnFiber, oldFiber, newChild, expirationTime) {
@@ -3303,11 +3307,18 @@ function createFiberFromTypeAndProps(type, key, pendingProps, mode, expirationTi
   } else {
     // 进入这里就要分别判断各种react自己内部提供的组件类型了
     // 比如concurrent fragment之类的
-    let tag = type.$$typeof
-    if (tag === Symbol.for('react.provider')) {
-      flag = ContextProvider
-    } else if (tag === Symbol.for('react.context')) {
-      flag = ContextConsumer
+    if (type === Symbol.for('react.concurrent_mode')) {
+      // Concurrent模式下要让mode给mode类型加上ConcurrentMode和StrictMode
+      mode = mode | ConcurrentMode | StrictMode
+      // 然后它的tag要置为Mode类型
+      flag = Mode
+    } else {
+      let tag = type.$$typeof
+      if (tag === Symbol.for('react.provider')) {
+        flag = ContextProvider
+      } else if (tag === Symbol.for('react.context')) {
+        flag = ContextConsumer
+      }
     }
   }
 
@@ -3558,7 +3569,17 @@ class ReactWork {
 const classComponentUpdater = {
   // isMounted: 
   enqueueSetState(instance, payload, callback) {
-    // debugger
+    debugger
+    // 当同一个事件中执行了两次setState的时候 不管两次setState执行时中间是否超过25ms
+    // 两次的时间都是一样的
+    // 因为在下面那个requestCurrentTime中会根据nextFlushedExpirationTime是否等于NoWork决定返回值
+    // 然后在enqueueSetState中会执行scheduleWork 之后里面执行markPendingPriorityLevel
+    // 在这里头会把root上挂上expirationTime
+    // 这样的话等下一个setState执行时候 当执行到requestCurrentTime中的findHighestPriorityRoot时
+    // 会读取root.expirationTime 然后就会让nextFlushedExpirationTime = 优先级最高的root.expirationTime
+    // 最后在requestCurrentTime中如果nextFlushedExpirationTime !== NoWork或Never就会直接返回上一次的setState的时间
+
+
     /*
       执行setState时
       奇数次更新时(1, 3, 5, ...)
@@ -3753,7 +3774,22 @@ const classComponentUpdater = {
     */
     // 先获取对应的fiber
     let fiber = instance._reactInternalFiber
+    // 得到一个当前花费的时间
+    // requestCurrentTime内部有可能是调用的
+    // scheduler.js文件中的getCurrentTime now()方法就是这个函数
+    // 这个函数是如果有performance就返回performance.now()
+    // 没有就返回 Date.now()
+    // Date.now()返回的1970年到现在的毫秒数
+    // performance.now()返回的是performance.timing.navigationStart
+    // 也就是页面开始加载的时间到现在的微秒数
     let currentTime = requestCurrentTime()
+    // 计算出这个fiber的优先级时间
+    // 这个expirationTime是根据当前这个setState
+    // 普通同步模式下(走sync)
+    // 普通异步模式下(走sync)
+    // Concurrent异步模式下(走Async)
+    // Concurrent同步模式下(走batch的Interactive)
+    // flushWork模式下(走sync)
     let expirationTime = computeExpirationForFiber(currentTime, fiber)
     
     /*

@@ -140,5 +140,11 @@ setState(同步)<br>
 <br>
 <br>
 <br>
+setState(异步)<br>
+&emsp;更新中
+&emsp;[关于Concurrent模式下如何计算优先级](./procedure/computeExpirationTime)
+<br>
+<br>
+<br>
 其他各种API以后会慢慢更新的，如果哪儿说的有啥问题的话请告诉我。顺便请各位大佬随手点个星星!小弟不胜感激~
 

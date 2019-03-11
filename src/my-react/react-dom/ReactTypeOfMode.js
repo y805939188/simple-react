@@ -3,5 +3,5 @@
 // |= 标识添加上这个类型
 export const NoContext = 0b000 // 没有上下文的类型
 export const ConcurrentMode = 0b001 // 使用低优先级的类型
-// export const StrictMode = 0b010
+export const StrictMode = 0b010 // 严格模式的类型
 // export const ProfileMode = 0b100

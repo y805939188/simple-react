@@ -1,3 +1,4 @@
+```js
 const MAX_SIGNED_31_BIT_INT = 1073741823 // (2**31) / 2 - 1
 export const NoWork = 0
 export const Never = 1
@@ -136,3 +137,5 @@ export function computeInteractiveExpiration(currentTime) {
     HIGH_PRIORITY_BATCH_SIZE
   )
 }
+
+```
