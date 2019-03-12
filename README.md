@@ -3,7 +3,7 @@
 ##### 简介 : 简化版的react,  虽然不能真的用在项目里, 但是可以作为React源码的阅读笔记看~求各位大佬给星星!感激不尽~
 ##### 已完成 : fiber架构, setState, 事件代理, ContextAPI, RefAPI
 
-##### 正在进行 : Concurrent异步渲染
+##### 正在进行 : Concurrent异步渲染(渣方法实现了个渣版本 正在完善中...)
 
 ##### 跑起来 : 根目录下执行 webpack-dev-server
 
@@ -142,7 +142,16 @@ setState(同步)<br>
 <br>
 setState(异步)<br>
 &emsp;更新中
+<br>
 &emsp;[关于Concurrent模式下如何计算优先级](./procedure/computeExpirationTime)
+<br>
+&emsp;Concurrent组件主要通过打断workLoop的nextUnitOfWork实现的
+&emsp;高版本浏览器有个叫requestIdleCallback的API可以在浏览器空闲的时候执行任务
+&emsp;也就是说可以用requestIdleCallback在浏览器空闲时去执行workLoop中的performUnitOfWork
+&emsp;但是requestIdleCallback这玩意不好使, 执行频率太低了(也可能是我用错方法了 o(╥﹏╥)o )
+&emsp;所以react中自己用requestAnimationFrame模拟实现了一个兼容性好并且比较能稳定执行的方法
+&emsp;这个实现有点复杂, 现在还没太研究明白 (╬￣皿￣)  所以暂时先用requestIdleCallback简单实现一个
+&emsp;目前好像有bug ((٩(//̀Д/́/)۶)) 之后慢慢完善吧...
 <br>
 <br>
 <br>
