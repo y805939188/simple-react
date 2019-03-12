@@ -1,0 +1,12 @@
+.move {
+  color: #fff;
+  background:purple;
+  position:relative;
+  animation:myfirst 5s infinite;
+}
+
+@keyframes myfirst {
+  0%   {left:0px; top:0px;}
+  50%  {left:200px;}
+  100% {left:0px; top:0px;}
+}

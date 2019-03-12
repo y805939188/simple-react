@@ -39,6 +39,7 @@ import {
 import {
   UpdateState // setState和ReactDOM.render的时候都是这个类型
 } from './ReactUpdateQueue'
+import { isError } from 'util';
 
 let nextUnitOfWork = null // 表示下一个要被调度的fiber
 let nextEffect = null // 表示下一个有要被commit的fiber
@@ -95,7 +96,7 @@ function requestCurrentTime() {
 }
 
 function computeExpirationForFiber(currentTime, fiber) {
-  debugger
+  // debugger
   let expirationTime = null
   if (expirationContext !== NoWork) {
     // 当通过syncUpdates把任务强制变为最高优先级的时候就会直接走这里
@@ -334,6 +335,7 @@ function ensureListeningTo(instance, type, propKey) {
   }
 }
 
+// 临时写的事件派发系统 以后会改
 function temp_dispatch_event_fn1(eventName, event) {
   event = event || window.event
   let target = event.target || event.srcElement
@@ -696,10 +698,17 @@ function performSyncWork(root) {
   performWork(Sync, false)
 }
 
+let globalDeadline = null
+let requestId = null
+function performAsyncWork(deadline) {
+  globalDeadline = deadline
+  performWork(NoWork, true)
+}
+
 function performWork(minExpirationTime, isYield) {
-
+// debugger
   findHighestPriorityRoot()
-
+  
   if (!isYield) {
     // 进入这里说明是优先级高 不允许暂停
     // 第三个参数表示不能暂停
@@ -735,19 +744,29 @@ function performWork(minExpirationTime, isYield) {
       // 也就是说对于该更新的过期时间 当前时间还够 还有富余的话 就继续执行performWorkOnRoot
       minExpirationTime <= nextFlushedExpirationTime
     ) {
+      isError('performWork', 50)
       performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, false)
-      // nextFlushedExpirationTime = NoWork
-      // nextFlushedRoot = null
       findHighestPriorityRoot()
     }
   } else {
-    // while (nextFlushedRoot !== null && nextFlushedExpirationTime !== NoWork && minExpirationTime <= nextFlushedExpirationTime && !(didYield && currentRendererTime > nextFlushedExpirationTime)) {
-      performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, currentRendererTime > nextFlushedExpirationTime);
-      nextFlushedExpirationTime = NoWork
-      nextFlushedRoot = null
-      // findHighestPriorityRoot()
-      // recomputeCurrentRendererTime()
+    // while (nextFlushedRoot !== null && nextFlushedExpirationTime !== NoWork && minExpirationTime <= nextFlushedExpirationTime) {
+    //   isError('performWork', 50)
+    //   performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, currentRendererTime > nextFlushedExpirationTime)
+    //   findHighestPriorityRoot()
+    //   recomputeCurrentRendererTime()
     // }
+    while (nextFlushedRoot !== null && nextFlushedExpirationTime !== NoWork && globalDeadline.timeRemaining() > 0) {
+      isError('performWork', 50)
+      performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, currentRendererTime > nextFlushedExpirationTime)
+      findHighestPriorityRoot()
+    }
+    return
+  }
+
+  // 使用Concurrent组件时候会进入这里
+  // 而异步时比如addEventListener或setTimeout之类的会进入上面
+  if (nextFlushedExpirationTime !== NoWork) {
+    scheduleCallbackWithExpirationTime(nextFlushedRoot, nextFlushedExpirationTime);
   }
 }
 
@@ -837,7 +856,12 @@ function findHighestPriorityRoot() {
   nextFlushedExpirationTime = highestPriorityWork
 }
 
-function scheduleCallbackWithExpirationTime(root, expirationTime) {}
+function scheduleCallbackWithExpirationTime(root, expirationTime) {
+  if (window.requestIdleCallback) {
+    requestId = requestIdleCallback(performAsyncWork) 
+  }
+  // performAsyncWork(root, expirationTime)
+}
 
 function performWorkOnRoot(root, expirationTime, isYield) {
   isRendering = true // 上来要先告诉react目前在更新(创建)fiber阶段
@@ -856,6 +880,8 @@ function performWorkOnRoot(root, expirationTime, isYield) {
         // 如果不是同步是异步的也就是说允许暂停的情况的话
         // 就通过shouldYieldToRenderer这个方法判断是否还有剩余时间来渲染
         // 有的话再渲染 没有的话就等下一帧再说
+        completeRoot(root, root.finishedWork)
+      } else if (isYield && globalDeadline.timeRemaining() > 0) {
         completeRoot(root, root.finishedWork)
       }
     }
@@ -967,6 +993,9 @@ function renderRoot(root, isYield) {
 
   if (!root.finishedWork) return // 如果没有的话说明出错了或者压根儿没节点
 
+  if (!!nextUnitOfWork) {
+    return scheduleCallbackWithExpirationTime()
+  }
   // console.log(root.finishedWork)
   // pendingCommitExpirationTime在后面的commit过程中会用到
   root.pendingCommitExpirationTime = expirationTime
@@ -1018,13 +1047,19 @@ function createWorkInProgress(current, pendingProps) {
 }
 
 function workLoop(isYield) {
+  isError('workLoop', 50)
   // console.log(nextUnitOfWork)
   // 这里要把每一个workInProgress作为参数
   // 然后在performUnitOfWork中生成下一个workInProgress
   // 直到没有workInProgress或者时间不够用了才退出
+  // if (!!globalDeadline) {
+  //   console.log(globalDeadline.timeRemaining())
+  //   debugger
+  // }
   if (!isYield) {
     // 如果不能暂停的话就一路solo下去
     while (!!nextUnitOfWork) {
+      isError('workLoop', 50)
       // 每个节点或者说每个react元素都是一个unit
       // 不管是真实dom节点还是class类或是函数节点
       nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
@@ -1032,7 +1067,14 @@ function workLoop(isYield) {
   } else {
     // 如果isYield是true说明可能是用的异步渲染
     // 那每次都要判断是否还有剩余时间
-    while (!!nextUnitOfWork && !shouldYieldToRenderer()) {
+    // while (!!nextUnitOfWork && !shouldYieldToRenderer()) {
+    //   nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
+    // }
+    if (!!globalDeadline) {  
+      console.log(globalDeadline.timeRemaining())
+    }
+    while (!!nextUnitOfWork && globalDeadline.timeRemaining() > 0) {
+      isError('workLoop', 50)
       nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
     }
   }
@@ -1432,6 +1474,8 @@ function finalizeInitialChildren(instance, type, props) {
     } else if (temp_events_obj.hasOwnProperty(propKey)) {
       // 进入这里说明props上有个事件相关的
       ensureListeningTo(instance, type, propKey)
+    } else {
+      instance.setAttribute(propKey, prop)
     }
   }
 }
@@ -3527,7 +3571,7 @@ class ReactRoot {
   }
 
   render(children, callback) {
-    // console.log(children)
+
     let root = this._internalRoot
     let work = new ReactWork()
     if (!!callback) work.then(callback)
@@ -3569,7 +3613,7 @@ class ReactWork {
 const classComponentUpdater = {
   // isMounted: 
   enqueueSetState(instance, payload, callback) {
-    debugger
+    // debugger
     // 当同一个事件中执行了两次setState的时候 不管两次setState执行时中间是否超过25ms
     // 两次的时间都是一样的
     // 因为在下面那个requestCurrentTime中会根据nextFlushedExpirationTime是否等于NoWork决定返回值

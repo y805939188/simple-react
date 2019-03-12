@@ -1,6 +1,6 @@
 import React, { ConcurrentMode } from './my-react/react/react'
 import ReactDOM from './my-react/react-dom/react-dom'
-
+import './index.css'
 let Context = React.createContext({ding: 666})
 
 let Provider = Context.Provider
@@ -160,10 +160,20 @@ class Ding13 extends React.Component {
       ding: !this.state.ding
     })
   }
+  createChild = () => {
+    let res = []
+    for (let i = 0; i < 1000; i++) {
+      res.push(<div>{this.state.ding ? 666 : 999}</div>)
+    }
+    return res
+  }
   render() {
     return(
       <div>
-        <h1 onClick={this.handleClick}>{this.state.ding ? 666 : 999}</h1>
+        <h1 onClick={this.handleClick}>click</h1>
+        <div class="move">
+          {this.createChild()}
+        </div>
       </div>
     )
   }
