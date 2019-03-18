@@ -4,6 +4,11 @@ const REACT_CONTEXT_TYPE = Symbol.for('react.context')
 const REACT_PROVIDER_TYPE = Symbol.for('react.provider')
 const REACT_CONCURRENT_MODE_TYPE = Symbol.for('react.concurrent_mode')
 
+function useState(initialState) {
+  let dispatcher = ReactCurrentDispatcher.current
+  return dispatcher.useState(initialState)
+}
+
 function ReactElement(type, key, ref, props) {
   // console.log(type, key, props)
   let element = {
@@ -94,4 +99,8 @@ export {
   createContext,
   createRef,
   Component,
+  useState
+}
+export const ReactCurrentDispatcher = {
+  current: null
 }

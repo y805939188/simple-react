@@ -1,3 +1,4 @@
+import { ReactCurrentDispatcher } from '../react/react'
 import {
   NoContext,
   ConcurrentMode,
@@ -39,7 +40,12 @@ import {
 import {
   UpdateState // setState和ReactDOM.render的时候都是这个类型
 } from './ReactUpdateQueue'
-import { isError } from 'util';
+import {
+  prepareToUseHooks,
+  finishHooks,
+  resetHooks,
+  Dispatcher
+} from './ReactHooks'
 
 let nextUnitOfWork = null // 表示下一个要被调度的fiber
 let nextEffect = null // 表示下一个有要被commit的fiber
@@ -56,6 +62,7 @@ let nextRenderExpirationTime = NoWork // 表示当前正在执行render的过程
 
 // 这几个是控制是否批量更新的全局变量
 let isBatchingUpdates = false
+
 let isUnbatchingUpdates = false
 let isBatchingInteractiveUpdates = false
 // 这几个是用来记录react应用最初执行时间以及计算currentTime的
@@ -77,9 +84,8 @@ let ifError = (function () {
   }
 })()
 
-
 /* ---------计算时间相关 */
-function requestCurrentTime() {
+export function requestCurrentTime() {
   if (isRendering) {
     // 已经开始渲染的话就返回最近计算出来的时间
     return currentSchedulerTime
@@ -95,8 +101,7 @@ function requestCurrentTime() {
   return currentSchedulerTime
 }
 
-function computeExpirationForFiber(currentTime, fiber) {
-  // debugger
+export function computeExpirationForFiber(currentTime, fiber) {
   let expirationTime = null
   if (expirationContext !== NoWork) {
     // 当通过syncUpdates把任务强制变为最高优先级的时候就会直接走这里
@@ -179,7 +184,7 @@ function computeExpirationForFiber(currentTime, fiber) {
   return expirationTime
 }
 
-function shouldYieldToRenderer() {}
+export function shouldYieldToRenderer() {}
 /* ---------计算时间相关 */
 
 
@@ -240,7 +245,6 @@ function unbatchedUpdates(fn, a) {
   // 初次渲染会直接走到这里 这个函数就是 root.render
   return fn(a);
 }
-
 
 function interactiveUpdates(fn, eventName, event) {
   // isBatchingInteractiveUpdates 初始是false
@@ -328,7 +332,7 @@ function ensureListeningTo(instance, type, propKey) {
       eventName2 = eventName
     }
     if (type === 'input') {
-      rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn2, propKey), false)
+      rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn2, propKey), true)
     } else {
       rootContainer.addEventListener(eventName2, interactiveUpdates.bind(null, temp_dispatch_event_fn1, propKey), false)
     }
@@ -706,9 +710,7 @@ function performAsyncWork(deadline) {
 }
 
 function performWork(minExpirationTime, isYield) {
-// debugger
   findHighestPriorityRoot()
-  
   if (!isYield) {
     // 进入这里说明是优先级高 不允许暂停
     // 第三个参数表示不能暂停
@@ -744,19 +746,19 @@ function performWork(minExpirationTime, isYield) {
       // 也就是说对于该更新的过期时间 当前时间还够 还有富余的话 就继续执行performWorkOnRoot
       minExpirationTime <= nextFlushedExpirationTime
     ) {
-      isError('performWork', 50)
+      // ifError('performWork', 50)
       performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, false)
       findHighestPriorityRoot()
     }
   } else {
     // while (nextFlushedRoot !== null && nextFlushedExpirationTime !== NoWork && minExpirationTime <= nextFlushedExpirationTime) {
-    //   isError('performWork', 50)
+    //   ifError('performWork', 50)
     //   performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, currentRendererTime > nextFlushedExpirationTime)
     //   findHighestPriorityRoot()
     //   recomputeCurrentRendererTime()
     // }
     while (nextFlushedRoot !== null && nextFlushedExpirationTime !== NoWork && globalDeadline.timeRemaining() > 0) {
-      isError('performWork', 50)
+      // ifError('performWork', 50)
       performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime, currentRendererTime > nextFlushedExpirationTime)
       findHighestPriorityRoot()
     }
@@ -894,6 +896,10 @@ function renderRoot(root, isYield) {
   // 这个流程也是working的过程 所以全局变量isWorking要置为true
   isWorking = true
 
+  // 由于React库本身只提供api但是不提供api对应的真实功能
+  // 所以要在ReactDOM这个库里给它加上逻辑功能
+  ReactCurrentDispatcher.current = Dispatcher
+
   // nextExpirationTimeToWorkOn就是在findNextExpirationTimeToWorkOn函数中被赋值的
   // 它表示在异步渲染时 要commit任务的最晚时间 超过的话就要使用同步更新了
   // findNextExpirationTimeToWorkOn的值是优先级最大的待更新的任务
@@ -926,7 +932,7 @@ function renderRoot(root, isYield) {
 
   // 这个workLoop就是要不停(或有停止)地递归生成fiber树
   workLoop(isYield)
-  // debugger
+  resetHooks()
   root.finishedWork = root.current.alternate
 
 
@@ -1047,7 +1053,7 @@ function createWorkInProgress(current, pendingProps) {
 }
 
 function workLoop(isYield) {
-  isError('workLoop', 50)
+  // ifError('workLoop', 50)
   // console.log(nextUnitOfWork)
   // 这里要把每一个workInProgress作为参数
   // 然后在performUnitOfWork中生成下一个workInProgress
@@ -1059,7 +1065,7 @@ function workLoop(isYield) {
   if (!isYield) {
     // 如果不能暂停的话就一路solo下去
     while (!!nextUnitOfWork) {
-      isError('workLoop', 50)
+      // ifError('workLoop', 50)
       // 每个节点或者说每个react元素都是一个unit
       // 不管是真实dom节点还是class类或是函数节点
       nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
@@ -1074,7 +1080,7 @@ function workLoop(isYield) {
       console.log(globalDeadline.timeRemaining())
     }
     while (!!nextUnitOfWork && globalDeadline.timeRemaining() > 0) {
-      isError('workLoop', 50)
+      // ifError('workLoop', 50)
       nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
     }
   }
@@ -1486,7 +1492,6 @@ function diffAndUpdateHostComponent(workInProgress, instance, type, newProps) {
   if (oldProps === newProps) return
 
   let updatePayload = prepareUpdate(instance, type, newProps, oldProps)
-  // debugger
   workInProgress.updateQueue = updatePayload
   // 这里这个updatePayload要是有的话就说明它上面的属性发生了变化
   // 如果某个节点的子元素是个数组的话 在更新时 如果子元素的位置发生了改变
@@ -1743,7 +1748,7 @@ function addRootToSchedule(root, expirationTime) {
   }
 }
 
-function scheduleWork(fiber, expirationTime) {
+export function scheduleWork(fiber, expirationTime) {
   // 每次开始调度都是从root开始的 不管是第一次渲染还是setState
   // scheduleWorkToRoot中会把当前这个fiber上的expirationTime置为优先级最大的
   let root = scheduleWorkToRoot(fiber, expirationTime)
@@ -2580,9 +2585,11 @@ function finishClassComponent(workInProgress, shouldUpdate) {
 
 // 更新FunctionComponent节点
 function updateFunctionComponent(workInProgress) {
+  prepareToUseHooks(workInProgress, nextRenderExpirationTime)
+
   let component = workInProgress.type
   let nextChildren = component(workInProgress.pendingProps)
-  // nextChildren = finishedHooks() // 用来处理hooks
+  nextChildren = finishHooks(nextChildren) // 用来处理hooks
   reconcileChildren(workInProgress, nextChildren)
   return workInProgress.child
 }
@@ -2621,16 +2628,19 @@ function updateHostText(workInProgress) {
 function mountIndeterminateComponent(workInProgress) {
   // 一般来讲 在初次渲染时除了RootFiber 剩下的节点都没有alternate
   let props = workInProgress.pendingProps
-  let value = workInProgress.type(props)
   // react源码中这里判断了返回值是否是对象并且是否有render方法
   // 如果有的话就把这个返回对象当成一个class类来处理
   // 也就是说如果函数返回类似 { render: function(){} }
   // 这样的类型react也能处理 当成class处理 同样的里头写的周期方法也能执行
-  // 不过我觉得这玩意儿吧, 可以, 但没必要 哪儿有人这么写呀
-  // 所以我这儿也就不写了
+  prepareToUseHooks(workInProgress)
 
+  let value = workInProgress.type(props)
   // 直接给它当成Function类型的
   workInProgress.tag = FunctionComponent
+
+  value = finishHooks(value)
+
+
   return reconcileChildren(workInProgress, value)
 }
 // 更新不确定类型的节点
@@ -2932,7 +2942,6 @@ function markRef(workInProgress) {
     }
   }
 }
-
 
 function reconcileSingleElement(returnFiber, currentFirstChild, element) {
   let createdFiber = null
@@ -3351,11 +3360,8 @@ function createFiberFromTypeAndProps(type, key, pendingProps, mode, expirationTi
   let flag = IndeterminateComponent 
   if (typeof type === 'function') {
     // 进入这里说明是函数类型的组件或是class类
-    // flag = 
     if (isClassComponent(type)) {
       flag = ClassComponent
-    } else {
-      flag = FunctionComponent
     }
   } else if (typeof type === 'string') {
     // 进入这里说明可能是个原生节点比如 'div'
@@ -3867,6 +3873,7 @@ const classComponentUpdater = {
   },
   enqueueForceUpdate() {}
 }
+
 
 const ReactDOM = {
   render: function(element, container, callback) {
