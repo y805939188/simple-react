@@ -1129,7 +1129,7 @@ function beginWork(workInProgress) {
   } else if (tag === HostRoot) {
     next = updateHostRoot(workInProgress)
   } else if (tag === FunctionComponent) {
-
+    next = updateFunctionComponent(workInProgress)
   } else if (tag === ClassComponent) {
     next = updateClassComponent(workInProgress)
   } else if (tag === HostComponent) {
@@ -2578,6 +2578,16 @@ function finishClassComponent(workInProgress, shouldUpdate) {
 }
 // 更新ClassComponent节点
 
+// 更新FunctionComponent节点
+function updateFunctionComponent(workInProgress) {
+  let component = workInProgress.type
+  let nextChildren = component(workInProgress.pendingProps)
+  // nextChildren = finishedHooks() // 用来处理hooks
+  reconcileChildren(workInProgress, nextChildren)
+  return workInProgress.child
+}
+// 更新FunctionComponent节点
+
 // 更新原生dom节点
 function updateHostComponent(workInProgress) {
   // let tag = workInProgress.type // 获取元素的名称 比如一个 'div'
@@ -3344,6 +3354,8 @@ function createFiberFromTypeAndProps(type, key, pendingProps, mode, expirationTi
     // flag = 
     if (isClassComponent(type)) {
       flag = ClassComponent
+    } else {
+      flag = FunctionComponent
     }
   } else if (typeof type === 'string') {
     // 进入这里说明可能是个原生节点比如 'div'

@@ -179,14 +179,21 @@ class Ding13 extends React.Component {
   }
 }
 
+function Ding14(props) {
+  return (
+    <div>{props.name}</div>
+  )
+}
+
 ReactDOM.render(
   // <Ding3></Ding3>,
   // <Ding4></Ding4>,
   // <Ding7></Ding7>,
   // <Ding10></Ding10>,
   // <Ding11></Ding11>,
-  <ConcurrentMode>
-    <Ding13></Ding13>
-  </ConcurrentMode>,
+  <Ding14 name={'dingge'}></Ding14>,
+  // <ConcurrentMode>
+  //   <Ding13></Ding13>
+  // </ConcurrentMode>,
   document.querySelector('#app')
 )
