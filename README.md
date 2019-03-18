@@ -1,7 +1,7 @@
 # Simple React
 
 ##### 简介 : 简化版的react,  虽然不能真的用在项目里, 但是可以作为React源码的阅读笔记看~求各位大佬给星星!感激不尽~
-##### 已完成 : fiber架构, setState, 事件代理, ContextAPI, RefAPI
+##### 已完成 : fiber架构, setState, 事件代理, ContextAPI, RefAPI, useState
 
 ##### 正在进行 : Concurrent异步渲染(渣方法实现了个渣版本 正在完善中...)
 
