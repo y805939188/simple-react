@@ -182,16 +182,17 @@ import ReactDOM from './my-react/react-dom/react-dom'
 
 function Ding14() {
   let [num1, setNum1] = useState(1)
-  let [num2, setNum2] = useState(99)
+  // let [num2, setNum2] = useState(99)
   let handleClickFn = () => {
-    setNum1(++num1)
-    setNum1(++num1)
-    setNum2(--num2)
+    // setNum1(++num1)
+    // setNum1(++num1)
+    // setNum2(--num2)
+    setNum1(num1 + 1)
   }
   return (
     <button onClick={handleClickFn}>
       <h1>{num1}</h1>
-      <h4>{num2}</h4>
+      {/* <h4>{num2}</h4> */}
     </button>
   )
 }

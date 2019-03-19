@@ -3631,7 +3631,6 @@ class ReactWork {
 const classComponentUpdater = {
   // isMounted: 
   enqueueSetState(instance, payload, callback) {
-    // debugger
     // 当同一个事件中执行了两次setState的时候 不管两次setState执行时中间是否超过25ms
     // 两次的时间都是一样的
     // 因为在下面那个requestCurrentTime中会根据nextFlushedExpirationTime是否等于NoWork决定返回值
@@ -3877,7 +3876,6 @@ const classComponentUpdater = {
 
 const ReactDOM = {
   render: function(element, container, callback) {
-    // debugger
     // 第一个参数是parentComponent
     // 第四个参数是标识是否是服务端渲染
     // 这个legacyRenderSubtreeIntoContainer可能会在其他方法中被用到
