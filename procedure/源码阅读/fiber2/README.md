@@ -103,11 +103,14 @@ function FiberNode(
         然后div的fiber的firstEffect这条链表就是: h1 → p → span → h3(注意是从p指向span 因为是深度优先)
         但是由于div自己本身没有更新 所以div的effectTag仍然是NoEffect
         
-        然后是 h1 和 h2 以及 h3 ，因为这仨的子节点都是文本节点 文本节点有可能不产生对应的fiber，所以这仨他们的firstEffect和lastEffect都是null。但是其中 h1 和 h3 自己本身有更新 所以会被挂载到他们的父节点 也就是div的effect链表上。
+        然后是 h1 和 h2 以及 h3 ，因为这仨的子节点都是文本节点 文本节点有可能不产生对应的fiber，
+        所以这仨他们的firstEffect和lastEffect都是null。
+        但是其中 h1 和 h3 自己本身有更新 所以会被挂载到他们的父节点 也就是div的effect链表上。
 
         但是span就不一样了
         span下面的p节点被删除了 而且span下只有这一个节点发生了改变
-        所以span的fiber的 lastEffect === firstEffect === p的fiber(注意！只等于p的fiber，虽然span自身也有更新，但是自身的更新不挂载到自己的effect链表上)
+        所以span的fiber的 lastEffect === firstEffect === p的fiber
+        (注意！只等于p的fiber，虽然span自身也有更新，但是自身的更新不挂载到自己的effect链表上)
         然后span的自身更新了class 所以它自身的effectTag属性是Update
 
         有了这个例子应该就可以明白，任何节点的子节点如果有更新 都会把它的子节点做成链表挂载在它身上
