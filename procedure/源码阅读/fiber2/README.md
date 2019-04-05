@@ -97,8 +97,8 @@ function FiberNode(
         这样的话 我们来看一看每个节点的fiber的effect链表是个什么样的状态
 
         首先最外层的div，它的子节点一共有5个，分别是h1 h2 span a p(注意，孙子节点也算div的子节点)
-        其中有更新的是 h1 p h3(h3 是新插入的) 一共这三个有更新
-        这三个有更新的fiber要本着深度优先的规则 形成链表挂载div的fiber上
+        其中有更新的是 h1 p span h3(h3 是新插入的) 一共这四个有更新
+        这四个有更新的fiber要本着深度优先的规则 形成链表挂载div的fiber上
         所以div的fiber的lastEffect就是: h3
         然后div的fiber的firstEffect这条链表就是: h1 → p → span → h3(注意是从p指向span 因为是深度优先)
         但是由于div自己本身没有更新 所以div的effectTag仍然是NoEffect
