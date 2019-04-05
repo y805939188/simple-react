@@ -1087,6 +1087,7 @@ function workLoop(isYield) {
 }
 
 function performUnitOfWork(workInProgress) {
+  debugger
   // beginWork就是开始工作 开始工作就是创建出子fiber节点
   let next = beginWork(workInProgress)
   workInProgress.memoizedProps = workInProgress.pendingProps

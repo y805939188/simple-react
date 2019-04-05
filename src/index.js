@@ -197,6 +197,47 @@ function Ding14() {
   )
 }
 
+// class Ding15 extends React.Component {
+//   state = {
+//     text: 123
+//   }
+//   handleClickFn = () => {
+//     this.setState({
+//       text: 456
+//     })
+//   }
+//   render() {
+//     return (
+//       <h1 onClick={this.handleClickFn}>{this.state.text}</h1>
+//     )
+//   }
+// }
+
+
+class Ding16 extends React.Component {
+  state = {
+    bool: true
+  }
+  handleClickFn = () => {
+    this.setState({
+      bool: !this.state.bool
+    })
+  }
+  returnChild = () => {
+    if (this.state.bool) {
+      return [<h1>111</h1>, <h2>222</h2>]
+    }
+    return <h1>111</h1>
+  }
+  render() {
+    return (
+      <div onClick={this.handleClickFn}>
+        {this.returnChild()}
+      </div>
+    )
+  }
+}
+
 ReactDOM.render(
   // <Ding3></Ding3>,
   // <Ding4></Ding4>,
@@ -206,6 +247,7 @@ ReactDOM.render(
   // <ConcurrentMode>
   //   <Ding13></Ding13>
   // </ConcurrentMode>,
-  <Ding14></Ding14>,
+  // <Ding14></Ding14>,
+  <Ding16></Ding16>,
   document.querySelector('#app')
 )
