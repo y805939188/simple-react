@@ -117,4 +117,47 @@ function enqueueUpdate(fiber, update) {
   // 这个上一轮的workInProgress的updateQueue一定会在processUpdateQueue中被操作处理的
   // 所以本轮在之后要生成的workInProgress的updateQueue 一定是只保存着本次最新的update的对象
 }
+
+// 这个enqueueUpdate稍微简化了一些 不过和源码中的效果是一样的 可以把源码中的替换成这个
+// 效果一样
+function enqueueUpdate(fiber, update) {
+  // 由于react中采用的是current和workInProgress的这种设计
+  // 在执行setState时会发生一种情况
+  // 什么情况呢
+  // 就是执行setState会先根据找到当前执行setState这个组件的实例
+  // 来找到当前组件对应的fiber 而这个fiber 在新一轮的更新中
+  // 有可能会作为current 但是也有可能会被复用 来作为workInProgress
+  // 而当创建workInProgress的时候 是一定要让它保持新的状态的
+  // 所以要对这两颗树上的updateQueue进行同步
+  let alternate = fiber.alternate
+  // 初次渲染的时候queue1代表的是current树
+  // 初次渲染的时候queue2代表的是workInProgress 也就是null
+  let queue1 = fiber.updateQueue
+  let queue2 = alternate ? alternate.updateQueue : null
+  if (!alternate) {
+    if (!queue1 && isFirstRender) {
+      queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState)
+      queue2 = null
+    }
+  } else {
+    if (!queue1) {
+      queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState)
+    }
+    if (!queue2) {
+      queue2 = alternate.updateQueue = createUpdateQueue(alternate.memoizedState)
+    }
+    if (!queue1.lastUpdate) {
+      queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState)
+    }
+    if (!queue2.lastUpdate) {
+      queue2 = alternate.updateQueue = createUpdateQueue(alternate.memoizedState)
+    }
+  }
+
+  appendUpdateToQueue(queue1, update)
+  if (!!alternate) {
+    appendUpdateToQueue(queue2, update)
+  }
+
+}
 ```
