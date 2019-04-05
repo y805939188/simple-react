@@ -73,6 +73,7 @@ function FiberNode(
         并且是所有有更新的子节点的链表
         也就是说 如果当前fiber下的某个子节点的effectTag是NoEffect的话
         那么这个子节点就不会被包括在这条链表上
+        不好理解的话直接看例子!
 
         <div>                           <div id="haschange">
             <h1>123</h1>                    <h1>456</h1>
