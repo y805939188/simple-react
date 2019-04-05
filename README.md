@@ -12,6 +12,11 @@
 
 <br>
 
+# 源码阅读笔记
+&emsp;[点这里](./procedure/源码阅读)<br>
+
+<br>
+
 
 # React渲染流程
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;React16对于React15多了一个新的Fiber架构, 每次对比也都是对比的Fiber数据结构。<br>
