@@ -1,3 +1,4 @@
+### 可以把这个demo放到script标签里跑一下，打打断点啥的。方便理解这个过程
 ```js
     let MyClass = {
       id: 1,
