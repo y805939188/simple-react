@@ -105,6 +105,11 @@ deep(vdomTree)
 &emsp;&emsp;14. 此时的workInProgress是MyClass的fiber，找到他的父节点和兄弟节点，发现他的父节点和兄弟节点都是null(其实MyClass的父节点应该是一个叫RootFiber的东西，这个RootFiber咱们下一篇说，这里先暂时理解成null)，于是最终这个completeUnitOfWork函数返回了 null 作为next。<br>
 &emsp;&emsp;15. 到此为止，终于，next已经决计为null了，于是null被返回到workLoop中，workLoop发现nextUnitOfWork是null，于是跳出loop循环，react结束创建fiber的过程。<br><br>
 &emsp;&emsp;咱们通过一个例子讲解了react创建fiber树的过程，这个过程总结一下就是从根儿开始往下遍历，一旦某个节点的child是null了，就去遍历这个节点的兄弟节点，一旦这个节点的兄弟节点也是null了，就去遍历他父节点的兄弟节点。然后要处理下一个fiber之前，给了react一个机会，一个可以中断渲染fiber，可以将线程交还给浏览器的机会。此时被中断的fiber会记录在那个nextUnitOfWork全局变量上，这样当下一次再回来继续的时候可以很轻松的找到上一次被打断的地方。<br>
-&emsp;&emsp;这个过程还是优点绕的，大家可以自己画画图，打打断点之类的。react中很多的地方都用到了这种类似的算法，可以说这个算法和fiber数据结构是完全相辅相成的。这就是react中最主要的fiber架构。<br>
+&emsp;&emsp;这个过程还是有点绕的，建议大家打打断点，自己画画图啥的。如果大家不想在源码里打断点的话，我准备了一个简化版的demo&emsp;[点这里](../demo)<br>
+&emsp;&emsp;react中很多的地方都用到了这种类似的算法，可以说这个算法和fiber数据结构是完全相辅相成的。这就是react中最主要的fiber架构。<br>
+
+
+
+
 
 &emsp;[下一篇: react渲染概括](../render&commit)<br>
