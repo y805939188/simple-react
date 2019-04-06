@@ -2,6 +2,18 @@
 
 &emsp;&emsp;上一篇简单阐述了一下我自己理解的fiber以及fiber架构，那么这篇来说一说fiber这个数据结构上的具体属性。<br>
 
+
+<div align="center"><img src='./createFiber.jpg'> </div>
+
+&emsp;&emsp;图片中是react的源码，在ReactFiber.js文件中可以看到，react是通过一个叫做createFiber的方法去创建一个fiber的。内部主要是通过 new FiberNode 来返回新的fiber。<br>
+&emsp;&emsp;接下来我们来看一看FiberNode是怎么创建的fiber节点的。
+
+
+<br>
+
+
+ReactFiber.js :
+
 ```js
 function FiberNode(
   tag: WorkTag,
@@ -28,18 +40,25 @@ function FiberNode(
         比如说:
             <div>
                 <h1></h1>
-                <h2></h2>
-                <MyComponent></MyComponet>
+                <MyComponent />
+                <span>
+                    <h2>6666</h2>
+                </span>
             </div>
         想上面这个jsx结构 就会形成一颗树和链表的树
         div
-        ↓ (child)
-        h1 ————————→ h2 ————————→ MyComponent ————————→ null    
-            (sibling) .  (sibling)
-        
+         ┃
+         ┃ (child)
+         ▼
+        h1 ————————→ MyComponent ————————→ span  
+           (sibling)             (sibling)   ┃
+                                             ┃ (child)
+                                             ▼
+                                             h2
         div.child → h1
-        h1.sibling → h2
-        h2.sibling → MyComponent       
+        h1.sibling → MyComponent
+        MyComponent.sibling → span
+        span.child → h2  
     */
     
     
@@ -143,8 +162,10 @@ react组件中的每一个jsx节点都对应一个fiber
 不管是原生dom还是自定义的组件 函数组件 class组件或者说react自己提供的一些组件 都对应一个fiber。<br>
 &emsp;&emsp;但是文本类型的节点有点特殊 怎么个特殊法呢？<br>
 &emsp;&emsp;&emsp;&emsp;1.当这个文本节点没有其他兄弟节点的情况，也就是说它的父节点只有他一个子节点，这种情况该文本节点不产生fiber，或者说直接让这个文本类型的节点的fiber是null。这是第一种情况<br>
-&emsp;&emsp;&emsp;&emsp;2.当这个文本节点有兄弟节点的时候，就是说它的父节点下有很多子节点，这种情况，会为该文本节点创建一个文本类型的fiebr。<br>
-&emsp;&emsp;&emsp;&emsp;以上两种情况比较特殊，一定要记住。除此之外的所有节点基本都会被创建自己对应的fiber
+&emsp;&emsp;&emsp;&emsp;2.当这个文本节点有兄弟节点的时候，就是说它的父节点下有很多子节点，这种情况，会为该文本节点创建一个文本类型的fiber。<br>
+&emsp;&emsp;&emsp;&emsp;以上对于文本类型的节点情况比较特殊，一定要记住。除此之外的所有节点基本都会被创建自己对应的fiber
 <br>
 &emsp;&emsp;以上就是fiber这种数据结构的所有属性。
-有些属性乍一看肯定不知道是用来干嘛的 没事儿，以后咱慢慢写~
+有些属性乍一看肯定不知道是用来干嘛的 没事儿，以后咱慢慢写~<br><br>
+
+&emsp;[下一篇: fiber架构](../fiber3)<br>
