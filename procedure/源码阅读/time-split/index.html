@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <!-- <script src="https://cdn.bootcss.com/react/16.8.6/umd/react.development.js"></script> -->
+  <!-- <script src="https://cdn.bootcss.com/react-dom/16.8.6/umd/react-dom.development.js"></script> -->
+  <script src="http://lib.baomitu.com/react/15.6.2/react.js"></script>
+  <script src="http://lib.baomitu.com/react-dom/15.6.2/react-dom.js"></script>
+  <script src="http://lib.baomitu.com/babel-standalone/6.26.0/babel.min.js"></script>
+  <title>Document</title>
+  <style>
+    li {
+      float: left;
+      list-style: none;
+    }
+
+    .animation-test {
+      position: relative;
+      width: 100px;
+      height: 100px;
+      background-color: purple;
+      margin-bottom: 20px;
+      animation: TestAnimate 2s infinite;
+    }
+
+    @keyframes TestAnimate
+    {
+      0% {left: 0;}
+      50% {left: 500px;}
+      100% {left: 0;}
+    }
+
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="text/babel">
+    class Test extends React.Component {
+      state = { num: 1 }
+
+      renderCustomLi = () => {
+        const arr = new Array(2000).fill(null);
+        const num = this.state.num;
+        return (
+          <ul>
+            {arr.map((item, index) => (<li key={`_${index}_`}>{num}</li>))}
+          </ul>
+        )
+      }
+
+      handleClick = () => {
+        this.setState({
+          num: this.state.num === 1 ? 2 : 1,
+        })
+      }
+
+      render() {
+        return (
+          <div>
+            <button onClick={this.handleClick}>react15 click change</button>
+            <div className="animation-test" />
+            <div>{this.renderCustomLi()}</div>
+          </div>
+        )
+      }
+    }
+
+    ReactDOM.render(
+      <Test />,
+      document.getElementById('app')
+    );
+  </script>
+</body>
+</html>
