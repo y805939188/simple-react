@@ -69,7 +69,7 @@ function enqueueUpdate(fiber, update) {
     // 而queue2.updateQueue也就是alternate.updateQueue在上一把中是作为current的
     // 所queue2上仍然保留着上一轮setState的链表状态
 
-    if (queue1.lastUpdate || queue2.lastUpdate) {
+    if (!queue1.lastUpdate || !queue2.lastUpdate) {
       // 如果说queue1或者queue2上任何一条链表的lastUpdate是null的话
       // 那么就把当前这个新的更新任务放到他们的lastUpdate上
       appendUpdateToQueue(queue1, update)
