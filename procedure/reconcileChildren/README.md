@@ -5,12 +5,7 @@ function reconcileChildren(workInProgress, newChild) {
   let current = workInProgress.alternate
   // 是不是Mount的区别是
   // mount阶段在后面会给fiber的effectTag一个Placement
-  let isMount = !!current ? false : true
-  if (!!current) {
-    workInProgress.child = reconcileChildFibers(workInProgress, newChild, isMount)
-  } else {
-    workInProgress.child = reconcileChildFibers(workInProgress, newChild, isMount)
-  }
+  workInProgress.child = reconcileChildFibers(workInProgress, newChild, !!current)
   return workInProgress.child
 }
 ```
