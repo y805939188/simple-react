@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="X-UA-Compatible" content="ie=edge"/>
+  <title>Document</title>
+</head>
+<body>
+  <script>
+    let MyClass = {
+      id: 1,
+      child: null,
+      sibling: null,
+      return: null,
+    }
+    let h1 = {
+      id: 2,
+      child: null,
+      sibling: null,
+      return: null,
+    }
+    let div = {
+      id: 3,
+      child: null,
+      sibling: null,
+      return: null,
+    }
+    let h2 = {
+      id: 4,
+      child: null,
+      sibling: null,
+      return: null,
+    }
+    let h3 = {
+      id: 5,
+      child: null,
+      sibling: null,
+      return: null,
+    }
+    let span = {
+      id: 6,
+      child: null,
+      sibling: null,
+      return: null,
+    }
+    Object.defineProperty(MyClass, 'child', { get: () => (h1) })
+    Object.defineProperty(h1, 'sibling', { get: () => (div) })
+    Object.defineProperty(h1, 'return', { get: () => (MyClass) })
+    Object.defineProperty(div, 'child', { get: () => (h2) })
+    Object.defineProperty(div, 'sibling', { get: () => (span) })
+    Object.defineProperty(div, 'return', { get: () => (MyClass) })
+    Object.defineProperty(span, 'return', { get: () => (MyClass) })
+    Object.defineProperty(h2, 'sibling', { get: () => (h3) })
+    Object.defineProperty(h2, 'return', { get: () => (div) })
+    Object.defineProperty(h3, 'return', { get: () => (div) })
+
+    function completeUnitOfWork(workInProgress) {
+      while (true) {
+        let siblingFiber = workInProgress.sibling
+        let returnFiber = workInProgress.return
+        if (!!siblingFiber) {
+          return siblingFiber
+        } else if (!!returnFiber) {
+          workInProgress = returnFiber
+          continue
+        }
+        return null
+      }
+    }
+    function beginWork(workInProgress) {
+      // 可能进行diff算法或者初始化clas组件或者执行生命周期
+      console.log(workInProgress.id)
+      let next = null
+      next = workInProgress.child
+      return next
+    }
+    function performUnitOfWork(workInProgress) {
+      let next = beginWork(workInProgress)
+      if (next === null) {
+        next = completeUnitOfWork(workInProgress)
+      }
+      return next
+    }
+
+    function workLoop(nextUnitOfWork) {
+      while (
+        !!nextUnitOfWork
+        // && 接下来的时间是否还够用
+      ) {
+        nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
+      }
+    }
+    workLoop(MyClass)
+  </script>
+</body>
+</html>

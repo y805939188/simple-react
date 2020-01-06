@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="X-UA-Compatible" content="ie=edge"/>
+  <title>Document</title>
+</head>
+<body>
+  <script>
+    const vdomTree = {
+      id: 1,
+      children: [
+        { id: 2, children: [
+            { id: 3, children: null },
+            { id: 4, children: null }
+          ]
+        },
+        {
+          id: 5,
+          children: [ { id: 6, children: null } ]
+        }
+      ]
+    }
+
+    function doWork (node) {
+      // 可能会做一些diff算法 生成dom之类的操作
+      // 做一些很复杂的操作
+      console.log(node.id);
+      return node;
+    }
+
+    function deep (node) {
+      debugger
+      let afterNode = doWork(node);
+      let children = afterNode.children;
+      if (!children || children.length === 0) return;
+      children.forEach((item) => {
+        deep(item);
+      })
+    }
+
+    deep(vdomTree)  
+  </script>
+</body>
+</html>
