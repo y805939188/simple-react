@@ -94,18 +94,21 @@ function FiberNode(
         那么这个子节点就不会被包括在这条链表上
         不好理解的话直接看例子!
 
-        <div>                           <div id="haschange">
-            <h1>123</h1>                    <h1>456</h1>
-            <h2>text</h2>    setState       <h2>text</h2>
-            <span>          ——————————→     <span class="haschange">
-                <a>888</a>                     <a>888</a>
-                <p></p>                     </span>    
-            </span>                         <h3>333</h3>
-        </div>                          </div>
+        <div id="root">                     <div id="root">
+            <div class="origin">                <div class="target">
+                <h1>123</h1>                        <h1>456</h1>
+                <h2>text</h2>    setState           <h2>text</h2>
+                <span>          ——————————→         <span class="haschange">
+                    <a>888</a>                         <a>888</a>
+                    <p></p>                         </span>    
+                </span>                             <h3>333</h3>
+            </div>                              </div>
+        </div>                              </div>
 
 
         比如说上面这种情况
-        最外层的div的id发生了改变 所以div的effectTag就是Update
+        最外层的div的id为root
+        它的直接子元素的 div 的 class 从origin变为了target 所以这个 div.origin 的 effectTag 就是Update
         h1的子节点 也就是这个文本从123变成了456 所以h1的effectTag也是Update
         h2没有发生任何改变 所以h2的effectTag是NoEffect
         span的class发生了改变 所以effectTag是Update
@@ -115,24 +118,41 @@ function FiberNode(
 
         这样的话 我们来看一看每个节点的fiber的effect链表是个什么样的状态
 
-        首先最外层的div，它的子节点一共有5个，分别是h1 h2 span a p(注意，孙子节点也算div的子节点)
-        其中有更新的是 h1 p span h3(h3 是新插入的) 一共这四个有更新
-        这四个有更新的fiber要本着深度优先的规则 形成链表挂载div的fiber上
-        所以div的fiber的lastEffect就是: h3
-        然后div的fiber的firstEffect这条链表就是: h1 → p → span → h3(注意是从p指向span 因为是深度优先)
-        但是由于div自己本身没有更新 所以div的effectTag仍然是NoEffect
+        首先最外层的 div#root，它的子节点一共有6个，分别是 div.origin、h1、h2、span、a、p(孙子节点也算div#root的子节点)
+        其中有更新的是 div.origin、h1、p、span、h3(h3 是新插入的)，一共这五个有更新（包括一个新插入的h3）
+        这五个有更新的fiber要本着深度优先的规则 形成链表挂，依次递归把更新往他们自己的父节点身上挂，最终会挂载到最外层的 div#root 的 fiber 上
         
-        然后是 h1 和 h2 以及 h3 ，因为这仨的子节点都是文本节点 文本节点有可能不产生对应的fiber，
-        所以这仨他们的firstEffect和lastEffect都是null。
-        但是其中 h1 和 h3 自己本身有更新 所以会被挂载到他们的父节点 也就是div的effect链表上。
+        什么是“深度递归，依次把更新往父节点上挂”呢？
+        首先“深度递归”指的是react在处理这些节点对应的fiber的时候，是从子节点开始处理的。
+        也就是按照 h1 -> h2 -> a -> p -> span -> h3 -> div.origin -> div#root 的顺序处理。
+        至于“依次把更新往父节点上挂”，
+        首先react依照深度递归的原则，每处理到一个节点，都先看这个节点的子节点们是否有更新，如果子节点有更新，就把子节点挂到当前fiber上，然后再看当前fiber本身是否有更新，如果有更新，就把当前
+        fiber挂到它的父节点身上。举个🌰：
+        比如第一个处理的节点是 h1 的fiber，然后会看 h1 的子节点是否有更新，由于 h1 是个叶子节点，没有子元素了(文本类型不算)，所以他也就没有要更新的子节点，下一步看 h1 本身是否有更新，
+        会发现 h1 有更新，因为他的文本发生改变，所以会把 h1 对应的fiber挂载到 h1 的父节点 也就是 div.origin 对应 fiber 的 effectList 上，
+        此时 div.origin 的 effectList(也就是firstEffect)是：h1的fiber（暂时只有它一个）
+        然后处理 h2，h2 和 h1 一样没有子节点，从这个demo来看，h2 自己本身也没有更新，所以 react 不会对 h2 做处理
+        第三个处理的是 a 标签（由于深度优先，所以会先处理 a 而不是 span），a 标签和 h2 标签一样没有子节点本身也没有更新，所以react不做任何处理
+        第四个处理的，按理说应该是 p 标签，但是 p 标签是一个删除标签，所以处理的流程稍微有点不一样，p 标签是在 react 对数组类型的子节点做diff算法的时候进行处理的，
+        这里暂时可以理解成 p 标签的 fiber 已经被挂在到了它的父节点也就是 span 的fiber上了，所以此时的 span 的 effectList 是：p的fiber
+        接下来第四个真正处理的就是 span 标签了，这里会发现 span 标签诚如上面说的，已经有一个子节点是 p 标签，要被删除，
+        所以会先把这个 p 标签的 fiber 挂到当前节点的父节点的effectList上，也就是 span 的父节点 div.origin 的 effectList 上
+        此时 div.origin 的 effectList 是：h1的fiber -> p的fiber
+        接下来 span 会看自己本身是否有更新，这个例子中 span 是有更新的，所以把 span 自己的 fiber 挂载到它的父节点上
+        此时 div.origin 的 effectList 是：h1的fiber -> p的fiber -> span的fiber
+        第五个要处理的是 h3 ，同样第一步先看 h3 是否有要更新的子节点，发现 h3 没有要更新的子节点，于是进行第二步，看 h3 自己是否要进行更新，
+        这里的 h3 是一个新插入的节点，所以是有更新的，所以要把 h3 自己挂载到它的父节点，也就是 div.origin 上，
+        此时 div.origin 的 effectList 是：h1的fiber -> p的fiber -> span的fiber -> h3的fiber
+        第六个要处理的，是 div.origin，还是一样，先看 div.origin 下是否有要更新的子节点，
+        发现 div.origin 身上有一串要更新的子节点，也就是h1的fiber -> p的fiber -> span的fiber -> h3的fiber
+        所以先把 h1的fiber -> p的fiber -> span的fiber -> h3的fiber 这一串挂载到 div.origin 的父节点也就是 div#root 上
+        此时 div#root 的 effectList 是：h1的fiber -> p的fiber -> span的fiber -> h3的fiber
+        最后看 div.origin 自己本身是否有更新，发现 div.origin 是一个有更新的节点，于是把自己挂载到它的父节点 div#root 上
+        此时 div#root 的 effectList 是：h1的fiber -> p的fiber -> span的fiber -> h3的fiber -> div.origin
+        
+        之后以此类推，最终会形成一条链表，链表上的每个节点都表示一个要更新的子节点，这条链表最终会挂载到整个 fiber树 的 root 上
 
-        但是span就不一样了
-        span下面的p节点被删除了 而且span下只有这一个节点发生了改变
-        所以span的fiber的 lastEffect === firstEffect === p的fiber
-        (注意！只等于p的fiber，虽然span自身也有更新，但是自身的更新不挂载到自己的effect链表上)
-        然后span的自身更新了class 所以它自身的effectTag属性是Update
-
-        有了这个例子应该就可以明白，任何节点的子节点如果有更新 都会把它的子节点做成链表挂载在它身上
+        有了这个例子应该就可以明白，任何节点的子节点如果有更新 都会按照深度优先的原则把它的子节点做成链表挂载在它身上
         而如果这个节点自身也有更新，那这个节点会被挂到它的父节点的effect链表上
 
     */
